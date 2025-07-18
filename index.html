@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        #canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full text-center">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">QR Code Scanner</h1>
+
+        <div id="video-container" class="mb-6">
+            <video id="video" playsinline autoplay></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <button id="startButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition duration-300 ease-in-out transform hover:scale-105">
+            Start Camera
+        </button>
+
+        <div id="result-container" class="mt-6 p-6 bg-gray-50 rounded-lg hidden">
+            <h2 class="text-2xl font-semibold mb-2 text-gray-700">Scanned QR Code:</h2>
+            <p id="result" class="text-lg text-gray-900 break-all"></p>
+        </div>
+        
+        <div id="error-container" class="mt-6 p-4 bg-red-100 text-red-700 rounded-lg hidden">
+            <p id="error-message"></p>
+        </div>
+
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvasElement = document.getElementById('canvas');
+        const canvas = canvasElement.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const resultContainer = document.getElementById('result-container');
+        const resultElement = document.getElementById('result');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessageElement = document.getElementById('error-message');
+
+        let stream;
+        let animationFrameId;
+
+        // --- Start Camera and Scanning ---
+        startButton.addEventListener('click', async () => {
+            try {
+                // Hide button and previous results/errors
+                startButton.classList.add('hidden');
+                resultContainer.classList.add('hidden');
+                errorContainer.classList.add('hidden');
+
+                // Request camera access
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // Required to work on iOS
+                video.play();
+
+                // Start the scanning loop
+                animationFrameId = requestAnimationFrame(tick);
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                showError("Could not access the camera. Please ensure you have a camera and have granted permission.");
+                startButton.classList.remove('hidden');
+            }
+        });
+
+        // --- Scanning Loop ---
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // Set canvas size to match video
+                canvasElement.height = video.videoHeight;
+                canvasElement.width = video.videoWidth;
+                
+                // Draw video frame to canvas
+                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                
+                // Get image data from canvas
+                const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+                
+                // Use jsQR to scan for a QR code
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+
+                if (code) {
+                    // QR code found!
+                    drawFoundLine(code.location.topLeftCorner, code.location.topRightCorner, code.location.bottomRightCorner, code.location.bottomLeftCorner);
+                    
+                    // Stop the camera and scanning
+                    stopScan();
+
+                    // Display the result
+                    resultElement.textContent = code.data;
+                    resultContainer.classList.remove('hidden');
+
+                    // Make the result a clickable link if it's a URL
+                    if (isValidHttpUrl(code.data)) {
+                        resultElement.innerHTML = '';
+                        const link = document.createElement('a');
+                        link.href = code.data;
+                        link.textContent = code.data;
+                        link.target = "_blank";
+                        link.rel = "noopener noreferrer";
+                        link.className = "text-indigo-600 hover:underline";
+                        resultElement.appendChild(link);
+                    }
+                    
+                    return; // Exit the loop
+                }
+            }
+            // Continue scanning
+            animationFrameId = requestAnimationFrame(tick);
+        }
+
+        // --- Stop Camera and Scanning ---
+        function stopScan() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            startButton.classList.remove('hidden');
+            startButton.textContent = "Scan Again";
+        }
+
+        // --- Helper function to draw a line around the QR code ---
+        function drawFoundLine(begin, end) {
+            canvas.beginPath();
+            canvas.moveTo(begin.x, begin.y);
+            canvas.lineTo(end.x, end.y);
+            canvas.lineWidth = 4;
+            canvas.strokeStyle = '#FF3B58';
+            canvas.stroke();
+        }
+        
+        // --- Show Error Message ---
+        function showError(message) {
+            errorMessageElement.textContent = message;
+            errorContainer.classList.remove('hidden');
+        }
+
+        // --- URL Validation ---
+        function isValidHttpUrl(string) {
+            let url;
+            try {
+                url = new URL(string);
+            } catch (_) {
+                return false;
+            }
+            return url.protocol === "http:" || url.protocol === "https:";
+        }
+
+        // --- Stop camera when user leaves the page ---
+        window.addEventListener('beforeunload', () => {
+            stopScan();
+        });
+    </script>
+</body>
+</html>
