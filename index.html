@@ -13,18 +13,18 @@
 <h2>Upload Photo with Comment</h2>
 <input type="file" id="imageInput" accept="image/*"><br><br>
 <textarea id="commentInput" placeholder="Enter your comment" rows="3" cols="40"></textarea><br><br>
-<button onclick="uploadPost()">Upload</button>
+<button id="uploadButton">Upload</button>
 
 <h3>All Posts</h3>
 <div id="postsContainer"></div>
 
-<!-- Firebase SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+  // IMPORTANT: Replace with your actual Firebase configuration
   const firebaseConfig = {
     apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
     authDomain: "shamankingdata.firebaseapp.com",
@@ -39,7 +39,11 @@
   const db = getFirestore(app);
   const auth = getAuth(app);
 
-  signInAnonymously(auth);
+  signInAnonymously(auth).catch(error => {
+    console.error("Anonymous sign-in failed:", error);
+    // Handle the anonymous sign-in error (e.g., show a message to the user)
+    // This could be the 'auth/admin-restricted-operation' error if not enabled in the console.
+  });
 
   async function uploadPost() {
     const fileInput = document.getElementById("imageInput");
@@ -52,27 +56,32 @@
 
     const file = fileInput.files[0];
 
-    // Convert to WebP
-    const webpBlob = await convertToWebP(file);
+    try {
+        // Convert to WebP
+        const webpBlob = await convertToWebP(file);
 
-    const storageRef = ref(storage, 'images/' + Date.now() + '.webp');
-    await uploadBytes(storageRef, webpBlob);
-    const imageUrl = await getDownloadURL(storageRef);
+        const storageRef = ref(storage, 'images/' + Date.now() + '.webp');
+        await uploadBytes(storageRef, webpBlob);
+        const imageUrl = await getDownloadURL(storageRef);
 
-    await addDoc(collection(db, "posts"), {
-      comment: comment,
-      imageUrl: imageUrl,
-      timestamp: serverTimestamp()
-    });
+        await addDoc(collection(db, "posts"), {
+          comment: comment,
+          imageUrl: imageUrl,
+          timestamp: serverTimestamp()
+        });
 
-    alert("Uploaded successfully!");
-    fileInput.value = '';
-    document.getElementById("commentInput").value = '';
-    loadPosts();
+        alert("Uploaded successfully!");
+        fileInput.value = '';
+        document.getElementById("commentInput").value = '';
+        loadPosts();
+    } catch (error) {
+        console.error("Upload failed:", error);
+        alert("Upload failed. Please check the console for details.");
+    }
   }
 
-  async function convertToWebP(file) {
-    return new Promise((resolve) => {
+  function convertToWebP(file) {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -83,32 +92,47 @@
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0);
           canvas.toBlob((blob) => {
-            resolve(blob);
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Canvas to Blob conversion failed."));
+            }
           }, "image/webp", 0.8);
         };
+        img.onerror = () => reject(new Error("Image failed to load."));
         img.src = e.target.result;
       };
+      reader.onerror = () => reject(new Error("File reader failed."));
       reader.readAsDataURL(file);
     });
   }
 
   async function loadPosts() {
     const container = document.getElementById("postsContainer");
-    container.innerHTML = "";
-    const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
-    const snapshot = await getDocs(q);
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const div = document.createElement("div");
-      div.className = "post";
-      div.innerHTML = `
-        <img src="${data.imageUrl}" alt="uploaded image"><br>
-        <strong>Comment:</strong><br>${data.comment}
-      `;
-      container.appendChild(div);
-    });
+    container.innerHTML = ""; // Clear previous posts
+    try {
+        const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const div = document.createElement("div");
+          div.className = "post";
+          div.innerHTML = `
+            <img src="${data.imageUrl}" alt="uploaded image"><br>
+            <strong>Comment:</strong><br>${data.comment}
+          `;
+          container.appendChild(div);
+        });
+    } catch (error) {
+        console.error("Error loading posts:", error);
+        container.innerHTML = "Failed to load posts.";
+    }
   }
+  
+  // The event listener is attached here programmatically
+  document.getElementById('uploadButton').addEventListener('click', uploadPost);
 
+  // Initial load of posts when the page loads
   loadPosts();
 </script>
 
