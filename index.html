@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Firebase Image Upload with Comment</title>
+  <title>Upload Your Photo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.css" />
   <style>
     body { 
       font-family: sans-serif; 
@@ -50,11 +51,12 @@
       border-radius: 8px; 
     }
     /* Make images responsive */
-    img { 
+    .post img { 
       max-width: 100%; 
       height: auto;
       border-radius: 4px; 
       margin-top: 10px; 
+      cursor: pointer;
     }
     #receipt { 
       margin-top: 20px; 
@@ -225,9 +227,19 @@
         const data = doc.data();
         const div = document.createElement("div");
         div.className = "post";
-        div.innerHTML = `<img src="${data.imageUrl}" alt="uploaded image"><br><strong>Comment:</strong><br>${data.comment}`;
+        // ** MODIFIED LINE **
+        div.innerHTML = `
+          <a href="${data.imageUrl}">
+            <img src="${data.imageUrl}" alt="uploaded image">
+          </a>
+          <br><strong>Comment:</strong><br>${data.comment}
+        `;
         container.appendChild(div);
       });
+      
+      // ** ADDED LINE **
+      new SimpleLightbox('.post a');
+
     } catch (error) {
       console.error("Error loading posts:", error);
       container.innerHTML = "Failed to load posts.";
@@ -237,6 +249,8 @@
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
   loadPosts();
 </script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.js"></script>
 
 </body>
 </html>
