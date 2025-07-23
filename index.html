@@ -26,13 +26,13 @@
 
   // IMPORTANT: Replace with your actual Firebase configuration
   const firebaseConfig = {
-    apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
-    authDomain: "shamankingdata.firebaseapp.com",
-    projectId: "shamankingdata",
-    storageBucket: "shamankingdata.appspot.com",
-    messagingSenderId: "757444066890",
-    appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
-  };
+  apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
+  authDomain: "shamankingdata.firebaseapp.com",
+  projectId: "shamankingdata",
+  storageBucket: "shamankingdata.firebasestorage.app", // This is the correct bucket
+  messagingSenderId: "757444066890",
+  appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
+};
 
   const app = initializeApp(firebaseConfig);
   const storage = getStorage(app);
