@@ -1,18 +1,87 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Upload Your Photo</title>
+  <title>Firebase Image Upload with Comment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; }
-    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    input, textarea, button { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
-    button:hover { background-color: #0056b3; }
-    button:disabled { background-color: #ccc; }
-    h2, h3 { color: #333; }
-    .post { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
-    img { max-width: 200px; border-radius: 4px; margin-top: 10px; }
-    #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
+    body { 
+      font-family: sans-serif; 
+      padding: 20px; 
+      background-color: #f4f4f4; 
+      margin: 0;
+    }
+    .container { 
+      max-width: 500px; 
+      margin: auto; 
+      background: white; 
+      padding: 20px; 
+      border-radius: 8px; 
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+    }
+    input, textarea, button { 
+      width: 100%; 
+      padding: 12px; 
+      margin-bottom: 10px; 
+      box-sizing: border-box; 
+      border: 1px solid #ccc; 
+      border-radius: 4px; 
+      font-size: 1em;
+    }
+    button { 
+      background-color: #007bff; 
+      color: white; 
+      border: none; 
+      cursor: pointer; 
+      font-weight: bold; 
+    }
+    button:hover { 
+      background-color: #0056b3; 
+    }
+    button:disabled { 
+      background-color: #ccc; 
+    }
+    h2, h3 { 
+      color: #333; 
+    }
+    .post { 
+      margin-top: 20px; 
+      border: 1px solid #ccc; 
+      padding: 10px; 
+      border-radius: 8px; 
+    }
+    /* Make images responsive */
+    img { 
+      max-width: 100%; 
+      height: auto;
+      border-radius: 4px; 
+      margin-top: 10px; 
+    }
+    #receipt { 
+      margin-top: 20px; 
+      padding: 15px; 
+      background-color: #d4edda; 
+      color: #155724; 
+      border: 1px solid #c3e6cb; 
+      border-radius: 4px; 
+      display: none; 
+      text-align: center; 
+    }
+
+    /* Media Query for mobile screens */
+    @media (max-width: 600px) {
+      body {
+        padding: 10px;
+      }
+      .container {
+        padding: 15px;
+      }
+      h2 {
+        font-size: 1.5em;
+      }
+      h3 {
+        font-size: 1.2em;
+      }
+    }
   </style>
 </head>
 <body>
@@ -31,7 +100,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-  import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, collection, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
   const firebaseConfig = {
@@ -77,13 +146,11 @@
     const file = fileInput.files[0];
 
     try {
-      // 1. Upload file to Storage first
       const webpBlob = await convertToWebP(file);
       const storageRef = ref(storage, `images/${Date.now()}.webp`);
       await uploadBytes(storageRef, webpBlob);
       const imageUrl = await getDownloadURL(storageRef);
 
-      // 2. Run a transaction to get receipt number and save post
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
@@ -101,7 +168,7 @@
           comment: comment,
           imageUrl: imageUrl,
           timestamp: serverTimestamp(),
-          isVisible: false, // Default to hidden
+          isVisible: false,
           receiptNumber: newReceiptNumber,
           uploaderId: currentUser.uid
         });
@@ -109,7 +176,6 @@
         return newReceiptNumber;
       });
 
-      // 3. Show success message
       const receiptDiv = document.getElementById("receipt");
       receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
       receiptDiv.style.display = 'block';
