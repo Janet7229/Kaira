@@ -1,51 +1,68 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Firebase Image Upload with Comment</title>
+  <title>Upload Your Photo</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; }
+    body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; }
+    .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    input, textarea, button { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:hover { background-color: #0056b3; }
+    button:disabled { background-color: #ccc; }
+    h2, h3 { color: #333; }
     .post { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
-    img { max-width: 200px; border-radius: 4px; }
+    img { max-width: 200px; border-radius: 4px; margin-top: 10px; }
+    #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
   </style>
 </head>
 <body>
 
-<h2>Upload Photo with Comment</h2>
-<input type="file" id="imageInput" accept="image/*"><br><br>
-<textarea id="commentInput" placeholder="Enter your comment" rows="3" cols="40"></textarea><br><br>
-<button id="uploadButton">Upload</button>
+<div class="container">
+    <h2>Upload Photo with Comment</h2>
+    <input type="file" id="imageInput" accept="image/*"><br>
+    <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
+    <button id="uploadButton">Upload</button>
+    <div id="receipt"></div>
 
-<h3>All Posts</h3>
-<div id="postsContainer"></div>
+    <h3>Approved Posts</h3>
+    <div id="postsContainer">Loading...</div>
+</div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-  import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-  // IMPORTANT: Replace with your actual Firebase configuration
   const firebaseConfig = {
-  apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
-  authDomain: "shamankingdata.firebaseapp.com",
-  projectId: "shamankingdata",
-  storageBucket: "shamankingdata.firebasestorage.app", // Make sure this line is correct
-  messagingSenderId: "757444066890",
-  appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
-};
+    apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
+    authDomain: "shamankingdata.firebaseapp.com",
+    projectId: "shamankingdata",
+    storageBucket: "shamankingdata.firebasestorage.app",
+    messagingSenderId: "757444066890",
+    appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
+  };
 
   const app = initializeApp(firebaseConfig);
   const storage = getStorage(app);
   const db = getFirestore(app);
   const auth = getAuth(app);
 
-  signInAnonymously(auth).catch(error => {
+  let currentUser = null;
+  signInAnonymously(auth).then((result) => {
+    currentUser = result.user;
+  }).catch(error => {
     console.error("Anonymous sign-in failed:", error);
-    // Handle the anonymous sign-in error (e.g., show a message to the user)
-    // This could be the 'auth/admin-restricted-operation' error if not enabled in the console.
+    alert("Could not connect. Please refresh the page.");
   });
 
+  const uploadButton = document.getElementById("uploadButton");
+
   async function uploadPost() {
+    if (!currentUser) {
+        alert("Not connected. Please refresh the page.");
+        return;
+    }
     const fileInput = document.getElementById("imageInput");
     const comment = document.getElementById("commentInput").value.trim();
 
@@ -53,86 +70,105 @@
       alert("Please select an image and write a comment.");
       return;
     }
+    
+    uploadButton.disabled = true;
+    uploadButton.textContent = "Uploading...";
 
     const file = fileInput.files[0];
 
     try {
-        // Convert to WebP
-        const webpBlob = await convertToWebP(file);
+      // 1. Upload file to Storage first
+      const webpBlob = await convertToWebP(file);
+      const storageRef = ref(storage, `images/${Date.now()}.webp`);
+      await uploadBytes(storageRef, webpBlob);
+      const imageUrl = await getDownloadURL(storageRef);
 
-        const storageRef = ref(storage, 'images/' + Date.now() + '.webp');
-        await uploadBytes(storageRef, webpBlob);
-        const imageUrl = await getDownloadURL(storageRef);
+      // 2. Run a transaction to get receipt number and save post
+      const receiptNumber = await runTransaction(db, async (transaction) => {
+        const counterRef = doc(db, "counters", "postCounter");
+        const counterDoc = await transaction.get(counterRef);
+        
+        if (!counterDoc.exists()) {
+            throw "Counter document does not exist!";
+        }
 
-        await addDoc(collection(db, "posts"), {
+        const newReceiptNumber = counterDoc.data().count + 1;
+        
+        transaction.update(counterRef, { count: newReceiptNumber });
+
+        const postsColRef = collection(db, "posts");
+        transaction.set(doc(postsColRef), {
           comment: comment,
           imageUrl: imageUrl,
-          timestamp: serverTimestamp()
+          timestamp: serverTimestamp(),
+          isVisible: false, // Default to hidden
+          receiptNumber: newReceiptNumber,
+          uploaderId: currentUser.uid
         });
 
-        alert("Uploaded successfully!");
-        fileInput.value = '';
-        document.getElementById("commentInput").value = '';
-        loadPosts();
+        return newReceiptNumber;
+      });
+
+      // 3. Show success message
+      const receiptDiv = document.getElementById("receipt");
+      receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
+      receiptDiv.style.display = 'block';
+
+      fileInput.value = '';
+      document.getElementById("commentInput").value = '';
     } catch (error) {
-        console.error("Upload failed:", error);
-        alert("Upload failed. Please check the console for details.");
+      console.error("Upload failed:", error);
+      alert("Upload failed. Please check the console for details.");
+    } finally {
+        uploadButton.disabled = false;
+        uploadButton.textContent = "Upload";
     }
   }
 
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0);
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Canvas to Blob conversion failed."));
-            }
-          }, "image/webp", 0.8);
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = e => {
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.8);
+            };
+            img.onerror = () => reject(new Error("Image failed to load."));
+            img.src = e.target.result;
         };
-        img.onerror = () => reject(new Error("Image failed to load."));
-        img.src = e.target.result;
-      };
-      reader.onerror = () => reject(new Error("File reader failed."));
-      reader.readAsDataURL(file);
+        reader.onerror = () => reject(new Error("File reader failed."));
+        reader.readAsDataURL(file);
     });
   }
 
   async function loadPosts() {
     const container = document.getElementById("postsContainer");
-    container.innerHTML = ""; // Clear previous posts
     try {
-        const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
-        const snapshot = await getDocs(q);
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          const div = document.createElement("div");
-          div.className = "post";
-          div.innerHTML = `
-            <img src="${data.imageUrl}" alt="uploaded image"><br>
-            <strong>Comment:</strong><br>${data.comment}
-          `;
-          container.appendChild(div);
-        });
+      const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
+      const snapshot = await getDocs(q);
+      container.innerHTML = "";
+      if (snapshot.empty) {
+        container.innerHTML = "No approved posts yet.";
+      }
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const div = document.createElement("div");
+        div.className = "post";
+        div.innerHTML = `<img src="${data.imageUrl}" alt="uploaded image"><br><strong>Comment:</strong><br>${data.comment}`;
+        container.appendChild(div);
+      });
     } catch (error) {
-        console.error("Error loading posts:", error);
-        container.innerHTML = "Failed to load posts.";
+      console.error("Error loading posts:", error);
+      container.innerHTML = "Failed to load posts.";
     }
   }
   
-  // The event listener is attached here programmatically
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
-
-  // Initial load of posts when the page loads
   loadPosts();
 </script>
 
