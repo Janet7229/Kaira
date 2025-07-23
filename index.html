@@ -1,187 +1,116 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Code Scanner</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        #video-container {
-            position: relative;
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto;
-            border-radius: 0.5rem;
-            overflow: hidden;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-        #video {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-        #canvas {
-            display: none;
-        }
-    </style>
+  <title>Firebase Image Upload with Comment</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .post { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
+    img { max-width: 200px; border-radius: 4px; }
+  </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body>
 
-    <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full text-center">
-        <h1 class="text-3xl font-bold mb-6 text-gray-800">QR Code Scanner</h1>
+<h2>Upload Photo with Comment</h2>
+<input type="file" id="imageInput" accept="image/*"><br><br>
+<textarea id="commentInput" placeholder="Enter your comment" rows="3" cols="40"></textarea><br><br>
+<button onclick="uploadPost()">Upload</button>
 
-        <div id="video-container" class="mb-6">
-            <video id="video" playsinline autoplay></video>
-            <canvas id="canvas"></canvas>
-        </div>
+<h3>All Posts</h3>
+<div id="postsContainer"></div>
 
-        <button id="startButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition duration-300 ease-in-out transform hover:scale-105">
-            Start Camera
-        </button>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-        <div id="result-container" class="mt-6 p-6 bg-gray-50 rounded-lg hidden">
-            <h2 class="text-2xl font-semibold mb-2 text-gray-700">Scanned QR Code:</h2>
-            <p id="result" class="text-lg text-gray-900 break-all"></p>
-        </div>
-        
-        <div id="error-container" class="mt-6 p-4 bg-red-100 text-red-700 rounded-lg hidden">
-            <p id="error-message"></p>
-        </div>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
+    authDomain: "shamankingdata.firebaseapp.com",
+    projectId: "shamankingdata",
+    storageBucket: "shamankingdata.appspot.com",
+    messagingSenderId: "757444066890",
+    appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
+  };
 
-    </div>
+  const app = initializeApp(firebaseConfig);
+  const storage = getStorage(app);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
 
-    <script>
-        const video = document.getElementById('video');
-        const canvasElement = document.getElementById('canvas');
-        const canvas = canvasElement.getContext('2d');
-        const startButton = document.getElementById('startButton');
-        const resultContainer = document.getElementById('result-container');
-        const resultElement = document.getElementById('result');
-        const errorContainer = document.getElementById('error-container');
-        const errorMessageElement = document.getElementById('error-message');
+  signInAnonymously(auth);
 
-        let stream;
-        let animationFrameId;
+  async function uploadPost() {
+    const fileInput = document.getElementById("imageInput");
+    const comment = document.getElementById("commentInput").value.trim();
 
-        // --- Start Camera and Scanning ---
-        startButton.addEventListener('click', async () => {
-            try {
-                // Hide button and previous results/errors
-                startButton.classList.add('hidden');
-                resultContainer.classList.add('hidden');
-                errorContainer.classList.add('hidden');
+    if (!fileInput.files[0] || !comment) {
+      alert("Please select an image and write a comment.");
+      return;
+    }
 
-                // Request camera access
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-                video.setAttribute("playsinline", true); // Required to work on iOS
-                video.play();
+    const file = fileInput.files[0];
 
-                // Start the scanning loop
-                animationFrameId = requestAnimationFrame(tick);
-            } catch (err) {
-                console.error("Error accessing camera:", err);
-                showError("Could not access the camera. Please ensure you have a camera and have granted permission.");
-                startButton.classList.remove('hidden');
-            }
-        });
+    // Convert to WebP
+    const webpBlob = await convertToWebP(file);
 
-        // --- Scanning Loop ---
-        function tick() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                // Set canvas size to match video
-                canvasElement.height = video.videoHeight;
-                canvasElement.width = video.videoWidth;
-                
-                // Draw video frame to canvas
-                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-                
-                // Get image data from canvas
-                const imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-                
-                // Use jsQR to scan for a QR code
-                const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: "dontInvert",
-                });
+    const storageRef = ref(storage, 'images/' + Date.now() + '.webp');
+    await uploadBytes(storageRef, webpBlob);
+    const imageUrl = await getDownloadURL(storageRef);
 
-                if (code) {
-                    // QR code found!
-                    drawFoundLine(code.location.topLeftCorner, code.location.topRightCorner, code.location.bottomRightCorner, code.location.bottomLeftCorner);
-                    
-                    // Stop the camera and scanning
-                    stopScan();
+    await addDoc(collection(db, "posts"), {
+      comment: comment,
+      imageUrl: imageUrl,
+      timestamp: serverTimestamp()
+    });
 
-                    // Display the result
-                    resultElement.textContent = code.data;
-                    resultContainer.classList.remove('hidden');
+    alert("Uploaded successfully!");
+    fileInput.value = '';
+    document.getElementById("commentInput").value = '';
+    loadPosts();
+  }
 
-                    // Make the result a clickable link if it's a URL
-                    if (isValidHttpUrl(code.data)) {
-                        resultElement.innerHTML = '';
-                        const link = document.createElement('a');
-                        link.href = code.data;
-                        link.textContent = code.data;
-                        link.target = "_blank";
-                        link.rel = "noopener noreferrer";
-                        link.className = "text-indigo-600 hover:underline";
-                        resultElement.appendChild(link);
-                    }
-                    
-                    return; // Exit the loop
-                }
-            }
-            // Continue scanning
-            animationFrameId = requestAnimationFrame(tick);
-        }
+  async function convertToWebP(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob((blob) => {
+            resolve(blob);
+          }, "image/webp", 0.8);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
-        // --- Stop Camera and Scanning ---
-        function stopScan() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-            }
-            startButton.classList.remove('hidden');
-            startButton.textContent = "Scan Again";
-        }
+  async function loadPosts() {
+    const container = document.getElementById("postsContainer");
+    container.innerHTML = "";
+    const q = query(collection(db, "posts"), orderBy("timestamp", "desc"));
+    const snapshot = await getDocs(q);
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const div = document.createElement("div");
+      div.className = "post";
+      div.innerHTML = `
+        <img src="${data.imageUrl}" alt="uploaded image"><br>
+        <strong>Comment:</strong><br>${data.comment}
+      `;
+      container.appendChild(div);
+    });
+  }
 
-        // --- Helper function to draw a line around the QR code ---
-        function drawFoundLine(begin, end) {
-            canvas.beginPath();
-            canvas.moveTo(begin.x, begin.y);
-            canvas.lineTo(end.x, end.y);
-            canvas.lineWidth = 4;
-            canvas.strokeStyle = '#FF3B58';
-            canvas.stroke();
-        }
-        
-        // --- Show Error Message ---
-        function showError(message) {
-            errorMessageElement.textContent = message;
-            errorContainer.classList.remove('hidden');
-        }
+  loadPosts();
+</script>
 
-        // --- URL Validation ---
-        function isValidHttpUrl(string) {
-            let url;
-            try {
-                url = new URL(string);
-            } catch (_) {
-                return false;
-            }
-            return url.protocol === "http:" || url.protocol === "https:";
-        }
-
-        // --- Stop camera when user leaves the page ---
-        window.addEventListener('beforeunload', () => {
-            stopScan();
-        });
-    </script>
 </body>
 </html>
