@@ -38,7 +38,6 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  // CORRECTED: Removed refFromURL from the import
   import { getStorage, ref, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getFirestore, collection, getDocs, query, orderBy, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -47,7 +46,8 @@
     apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
     authDomain: "shamankingdata.firebaseapp.com",
     projectId: "shamankingdata",
-    storageBucket: "shamankingdata.appspot.com",
+    // THIS IS THE CORRECTED LINE
+    storageBucket: "shamankingdata.firebasestorage.app", 
     messagingSenderId: "757444066890",
     appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
   };
@@ -88,25 +88,21 @@
     loadPosts(); // Refresh list
   }
 
-  // ENTIRELY NEW AND IMPROVED DELETE FUNCTION
   async function deletePost(postId, postData) {
     if (!confirm("Are you sure you want to delete this post forever?")) return;
 
     try {
-      // Step 1: Delete the image from Storage if it exists
       if (postData.imageUrl) {
-        // This new logic manually extracts the file path from the URL
         const fileUrl = postData.imageUrl;
         const filePath = decodeURIComponent(fileUrl.split('/o/')[1].split('?')[0]);
         const imageRef = ref(storage, filePath);
         await deleteObject(imageRef);
       }
 
-      // Step 2: Delete the document from Firestore
       await deleteDoc(doc(db, "posts", postId));
       
       alert("Post deleted successfully! 👍");
-      loadPosts(); // Refresh the list
+      loadPosts();
 
     } catch (error) {
       console.error("Error deleting post: ", error);
