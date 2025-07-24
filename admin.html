@@ -38,8 +38,8 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  // UPDATED: Added refFromURL
-  import { getStorage, ref, refFromURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+  // CORRECTED: Removed refFromURL from the import
+  import { getStorage, ref, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getFirestore, collection, getDocs, query, orderBy, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -93,14 +93,12 @@
     if (!confirm("Are you sure you want to delete this post forever?")) return;
 
     try {
-      // Step 1: Delete the image from Storage if a URL or Path exists
-      if (postData.imagePath) {
-        // For new posts, use the reliable path
-        const imageRef = ref(storage, postData.imagePath);
-        await deleteObject(imageRef);
-      } else if (postData.imageUrl) {
-        // For old posts, use the download URL
-        const imageRef = refFromURL(storage, postData.imageUrl);
+      // Step 1: Delete the image from Storage if it exists
+      if (postData.imageUrl) {
+        // This new logic manually extracts the file path from the URL
+        const fileUrl = postData.imageUrl;
+        const filePath = decodeURIComponent(fileUrl.split('/o/')[1].split('?')[0]);
+        const imageRef = ref(storage, filePath);
         await deleteObject(imageRef);
       }
 
@@ -112,8 +110,6 @@
 
     } catch (error) {
       console.error("Error deleting post: ", error);
-      
-      // If storage deletion fails, ask if we should still delete the database entry
       if (error.code && error.code.startsWith('storage/')) {
         if (confirm("Could not delete the image file (it might already be gone).\n\nDo you still want to delete the post data from the database?")) {
           await deleteDoc(doc(db, "posts", postId));
@@ -157,7 +153,6 @@
           </div>
         `;
         div.querySelector('.toggle-visibility-btn').addEventListener('click', () => toggleVisibility(postId, data.isVisible));
-        // UPDATED: Pass the entire 'data' object to the delete function
         div.querySelector('.delete-btn').addEventListener('click', () => deletePost(postId, data));
         postsContainer.appendChild(div);
       });
