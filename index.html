@@ -11,6 +11,15 @@
       background-color: #f4f4f4; 
       margin: 0;
     }
+    .logo-container {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .logo-container img {
+      max-width: 100%;
+      height: auto;
+      max-height: 150px;
+    }
     .container { 
       max-width: 500px; 
       margin: auto; 
@@ -50,7 +59,6 @@
       padding: 10px; 
       border-radius: 8px; 
     }
-    /* Make images responsive */
     .post img { 
       max-width: 100%; 
       height: auto;
@@ -68,8 +76,6 @@
       display: none; 
       text-align: center; 
     }
-
-    /* Media Query for mobile screens */
     @media (max-width: 600px) {
       body {
         padding: 10px;
@@ -88,15 +94,19 @@
 </head>
 <body>
 
-<div class="container">
-    <h2>Upload Photo with Comment</h2>
-    <input type="file" id="imageInput" accept="image/*"><br>
-    <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
-    <button id="uploadButton">Upload</button>
-    <div id="receipt"></div>
+<div class="logo-container">
+  <img src="RInew(1).jpg" alt="Logo">
+</div>
 
-    <h3>Approved Posts</h3>
-    <div id="postsContainer">Loading...</div>
+<div class="container">
+  <h2>Upload Photo with Comment</h2>
+  <input type="file" id="imageInput" accept="image/*"><br>
+  <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
+  <button id="uploadButton">Upload</button>
+  <div id="receipt"></div>
+
+  <h3>Approved Posts</h3>
+  <div id="postsContainer">Loading...</div>
 </div>
 
 <script type="module">
@@ -227,7 +237,6 @@
         const data = doc.data();
         const div = document.createElement("div");
         div.className = "post";
-        // ** MODIFIED LINE **
         div.innerHTML = `
           <a href="${data.imageUrl}">
             <img src="${data.imageUrl}" alt="uploaded image">
@@ -236,16 +245,13 @@
         `;
         container.appendChild(div);
       });
-      
-      // ** ADDED LINE **
       new SimpleLightbox('.post a');
-
     } catch (error) {
       console.error("Error loading posts:", error);
       container.innerHTML = "Failed to load posts.";
     }
   }
-  
+
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
   loadPosts();
 </script>
