@@ -5,90 +5,71 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.css" />
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-      background-color: #f4f4f4;
+    body { 
+      font-family: sans-serif; 
+      padding: 20px; 
+      background-color: #f4f4f4; 
       margin: 0;
     }
-    .logo-container {
-      text-align: center;
-      margin-bottom: 20px;
+    .container { 
+      max-width: 500px; 
+      margin: auto; 
+      background: white; 
+      padding: 20px; 
+      border-radius: 8px; 
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
     }
-    .logo-container img {
-      max-width: 100%;
-      height: auto;
-      max-height: 150px;
-    }
-    .container {
-      max-width: 500px;
-      margin: auto;
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    input, textarea, button {
-      width: 100%;
-      padding: 12px;
-      margin-bottom: 10px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+    input, textarea, button { 
+      width: 100%; 
+      padding: 12px; 
+      margin-bottom: 10px; 
+      box-sizing: border-box; 
+      border: 1px solid #ccc; 
+      border-radius: 4px; 
       font-size: 1em;
     }
-    button {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-weight: bold;
+    button { 
+      background-color: #007bff; 
+      color: white; 
+      border: none; 
+      cursor: pointer; 
+      font-weight: bold; 
     }
-    button:hover {
-      background-color: #0056b3;
+    button:hover { 
+      background-color: #0056b3; 
     }
-    button:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
+    button:disabled { 
+      background-color: #ccc; 
     }
-    h2, h3 {
-      color: #333;
+    h2, h3 { 
+      color: #333; 
     }
-    .post {
-      margin-top: 20px;
-      border: 1px solid #ccc;
-      padding: 15px;
-      border-radius: 8px;
+    .post { 
+      margin-top: 20px; 
+      border: 1px solid #ccc; 
+      padding: 10px; 
+      border-radius: 8px; 
     }
-    .post img {
-      max-width: 100%;
+    /* Make images responsive */
+    .post img { 
+      max-width: 100%; 
       height: auto;
-      border-radius: 4px;
-      margin-top: 10px;
+      border-radius: 4px; 
+      margin-top: 10px; 
       cursor: pointer;
     }
-    #receipt {
-      margin-top: 20px;
-      padding: 15px;
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-      border-radius: 4px;
-      display: none;
-      text-align: center;
+    #receipt { 
+      margin-top: 20px; 
+      padding: 15px; 
+      background-color: #d4edda; 
+      color: #155724; 
+      border: 1px solid #c3e6cb; 
+      border-radius: 4px; 
+      display: none; 
+      text-align: center; 
     }
-    /* Admin Reply Styles */
-    .admin-reply-container {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid #eee;
-    }
-    .reply-button {
-        background-color: #28a745; /* Green for admin action */
-    }
-    .reply-button:hover {
-        background-color: #218838;
-    }
+
+    /* Media Query for mobile screens */
     @media (max-width: 600px) {
       body {
         padding: 10px;
@@ -96,69 +77,58 @@
       .container {
         padding: 15px;
       }
-      h2 { font-size: 1.5em; }
-      h3 { font-size: 1.2em; }
+      h2 {
+        font-size: 1.5em;
+      }
+      h3 {
+        font-size: 1.2em;
+      }
     }
   </style>
 </head>
 <body>
 
-<div class="logo-container">
-  <img src="RInew(1).jpg" alt="Logo">
-</div>
-
 <div class="container">
-  <h2>Upload Photo with Comment</h2>
-  <input type="file" id="imageInput" accept="image/*"><br>
-  <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
-  <button id="uploadButton">Upload</button>
-  <div id="receipt"></div>
+    <h2>Upload Photo with Comment</h2>
+    <input type="file" id="imageInput" accept="image/*"><br>
+    <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
+    <button id="uploadButton">Upload</button>
+    <div id="receipt"></div>
 
-  <h3>Approved Posts</h3>
-  <div id="postsContainer">Loading...</div>
+    <h3>Approved Posts</h3>
+    <div id="postsContainer">Loading...</div>
 </div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-  import { getFirestore, collection, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, collection, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-  // --- Firebase Configuration ---
   const firebaseConfig = {
     apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
     authDomain: "shamankingdata.firebaseapp.com",
     projectId: "shamankingdata",
-    storageBucket: "shamankingdata.appspot.com",
+    storageBucket: "shamankingdata.firebasestorage.app",
     messagingSenderId: "757444066890",
     appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
   };
 
-  // --- Initialize Firebase ---
   const app = initializeApp(firebaseConfig);
   const storage = getStorage(app);
   const db = getFirestore(app);
   const auth = getAuth(app);
-  
-  // --- Admin Check ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const isAdmin = urlParams.get('admin') === 'true';
 
-  // --- Anonymous Authentication ---
   let currentUser = null;
-  signInAnonymously(auth).catch(error => {
+  signInAnonymously(auth).then((result) => {
+    currentUser = result.user;
+  }).catch(error => {
     console.error("Anonymous sign-in failed:", error);
     alert("Could not connect. Please refresh the page.");
   });
-  auth.onAuthStateChanged(user => {
-    if (user) currentUser = user;
-  });
 
   const uploadButton = document.getElementById("uploadButton");
-  const postsContainer = document.getElementById("postsContainer");
-  let lightbox = new SimpleLightbox('.post a');
 
-  // --- User Post Upload Function ---
   async function uploadPost() {
     if (!currentUser) {
         alert("Not connected. Please refresh the page.");
@@ -187,13 +157,16 @@
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
         
-        if (!counterDoc.exists()) throw "Counter document does not exist!";
+        if (!counterDoc.exists()) {
+            throw "Counter document does not exist!";
+        }
 
         const newReceiptNumber = counterDoc.data().count + 1;
+        
         transaction.update(counterRef, { count: newReceiptNumber });
 
-        const newPostRef = doc(collection(db, "posts"));
-        transaction.set(newPostRef, {
+        const postsColRef = collection(db, "posts");
+        transaction.set(doc(postsColRef), {
           comment: comment,
           imageUrl: imageUrl,
           timestamp: serverTimestamp(),
@@ -201,6 +174,7 @@
           receiptNumber: newReceiptNumber,
           uploaderId: currentUser.uid
         });
+
         return newReceiptNumber;
       });
 
@@ -219,7 +193,6 @@
     }
   }
 
-  // --- Image to WebP Conversion Utility ---
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -240,120 +213,40 @@
         reader.readAsDataURL(file);
     });
   }
-  
-  // --- Admin Reply Function [NEW] ---
-  async function handleAdminReply(postId, file) {
-    const replyButton = document.querySelector(`button[data-post-id="${postId}"]`);
-    if (!replyButton) return;
 
-    replyButton.disabled = true;
-    replyButton.textContent = "Replying...";
-
-    try {
-        const webpBlob = await convertToWebP(file);
-        const storageRef = ref(storage, `admin-replies/${postId}-${Date.now()}.webp`);
-        await uploadBytes(storageRef, webpBlob);
-        const adminReplyImageUrl = await getDownloadURL(storageRef);
-
-        const postRef = doc(db, "posts", postId);
-        await updateDoc(postRef, {
-            adminReplyImageUrl: adminReplyImageUrl,
-            adminReplyTimestamp: serverTimestamp()
-        });
-
-        const adminReplyContainer = document.getElementById(`reply-container-${postId}`);
-        adminReplyContainer.innerHTML = `
-            <strong>Admin Reply:</strong><br>
-            <a href="${adminReplyImageUrl}">
-                <img src="${adminReplyImageUrl}" alt="Admin reply image">
-            </a>
-        `;
-        lightbox.refresh();
-    } catch (error) {
-        console.error("Admin reply failed:", error);
-        alert("Admin reply failed. Please check the console.");
-        replyButton.disabled = false;
-        replyButton.textContent = "Reply with Photo";
-    }
-  }
-
-  // --- Load and Display Posts Function [MODIFIED] ---
   async function loadPosts() {
+    const container = document.getElementById("postsContainer");
     try {
       const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
-      postsContainer.innerHTML = "";
-      
+      container.innerHTML = "";
       if (snapshot.empty) {
-        postsContainer.innerHTML = "No approved posts yet.";
+        container.innerHTML = "No approved posts yet.";
       }
-      
-      snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        const postId = docSnap.id;
+      snapshot.forEach(doc => {
+        const data = doc.data();
         const div = document.createElement("div");
         div.className = "post";
-        
-        let adminSection = '';
-        if (data.adminReplyImageUrl) {
-            // If there is a reply, show it
-            adminSection = `
-                <div class="admin-reply-container">
-                    <strong>Admin Reply:</strong><br>
-                    <a href="${data.adminReplyImageUrl}">
-                        <img src="${data.adminReplyImageUrl}" alt="Admin reply image">
-                    </a>
-                </div>
-            `;
-        } else if (isAdmin) {
-            // If there's no reply AND it's an admin, show the reply controls
-            adminSection = `
-                <div class="admin-reply-container" id="reply-container-${postId}">
-                    <input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;">
-                    <button class="reply-button" data-post-id="${postId}">Reply with Photo</button>
-                </div>
-            `;
-        }
-
+        // ** MODIFIED LINE **
         div.innerHTML = `
           <a href="${data.imageUrl}">
-            <img src="${data.imageUrl}" alt="Uploaded image">
+            <img src="${data.imageUrl}" alt="uploaded image">
           </a>
-          <br><br><strong>Comment:</strong><br>${data.comment}
-          ${adminSection}
+          <br><strong>Comment:</strong><br>${data.comment}
         `;
-        postsContainer.appendChild(div);
+        container.appendChild(div);
       });
-      lightbox.refresh();
+      
+      // ** ADDED LINE **
+      new SimpleLightbox('.post a');
+
     } catch (error) {
       console.error("Error loading posts:", error);
-      postsContainer.innerHTML = "Failed to load posts.";
+      container.innerHTML = "Failed to load posts.";
     }
   }
-
-  // --- Event Listeners ---
-  document.getElementById('uploadButton').addEventListener('click', uploadPost);
-
-  // Use event delegation for dynamically created reply buttons
-  postsContainer.addEventListener('click', e => {
-    if (e.target && e.target.matches('button.reply-button')) {
-        const postId = e.target.dataset.postId;
-        document.getElementById(`reply-input-${postId}`).click();
-    }
-  });
-
-  // Use event delegation for dynamically created file inputs
-  postsContainer.addEventListener('change', e => {
-      if (e.target && e.target.matches('input[id^="reply-input-"]')) {
-          const file = e.target.files[0];
-          const postId = e.target.id.split('-')[2];
-          if (file) {
-              handleAdminReply(postId, file);
-          }
-      }
-  });
   
-  // --- Initial Load ---
+  document.getElementById('uploadButton').addEventListener('click', uploadPost);
   loadPosts();
 </script>
 
