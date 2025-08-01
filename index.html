@@ -77,17 +77,17 @@
       display: none;
       text-align: center;
     }
-    /* Admin Reply Styles */
-    .admin-reply-container {
+    /* Reply Styles */
+    .reply-container {
       margin-top: 15px;
       padding-top: 15px;
       border-top: 1px solid #eee;
     }
     .reply-button {
-        background-color: #28a745; /* Green for admin action */
+      background-color: #007bff; /* Standard blue for user action */
     }
     .reply-button:hover {
-        background-color: #218838;
+      background-color: #0056b3;
     }
     @media (max-width: 600px) {
       body {
@@ -139,10 +139,6 @@
   const storage = getStorage(app);
   const db = getFirestore(app);
   const auth = getAuth(app);
-  
-  // --- Admin Check ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const isAdmin = urlParams.get('admin') === 'true';
 
   // --- Anonymous Authentication ---
   let currentUser = null;
@@ -241,8 +237,8 @@
     });
   }
   
-  // --- Admin Reply Function [NEW] ---
-  async function handleAdminReply(postId, file) {
+  // --- User Reply Function [MODIFIED] ---
+  async function handleReply(postId, file) {
     const replyButton = document.querySelector(`button[data-post-id="${postId}"]`);
     if (!replyButton) return;
 
@@ -251,27 +247,27 @@
 
     try {
         const webpBlob = await convertToWebP(file);
-        const storageRef = ref(storage, `admin-replies/${postId}-${Date.now()}.webp`);
+        const storageRef = ref(storage, `replies/${postId}-${Date.now()}.webp`);
         await uploadBytes(storageRef, webpBlob);
-        const adminReplyImageUrl = await getDownloadURL(storageRef);
+        const replyImageUrl = await getDownloadURL(storageRef);
 
         const postRef = doc(db, "posts", postId);
         await updateDoc(postRef, {
-            adminReplyImageUrl: adminReplyImageUrl,
-            adminReplyTimestamp: serverTimestamp()
+            replyImageUrl: replyImageUrl,
+            replyTimestamp: serverTimestamp()
         });
 
-        const adminReplyContainer = document.getElementById(`reply-container-${postId}`);
-        adminReplyContainer.innerHTML = `
-            <strong>Admin Reply:</strong><br>
-            <a href="${adminReplyImageUrl}">
-                <img src="${adminReplyImageUrl}" alt="Admin reply image">
+        const replyContainer = document.getElementById(`reply-container-${postId}`);
+        replyContainer.innerHTML = `
+            <strong>Reply:</strong><br>
+            <a href="${replyImageUrl}">
+                <img src="${replyImageUrl}" alt="Reply image">
             </a>
         `;
         lightbox.refresh();
     } catch (error) {
-        console.error("Admin reply failed:", error);
-        alert("Admin reply failed. Please check the console.");
+        console.error("Reply failed:", error);
+        alert("Reply failed. Please check the console.");
         replyButton.disabled = false;
         replyButton.textContent = "Reply with Photo";
     }
@@ -294,21 +290,21 @@
         const div = document.createElement("div");
         div.className = "post";
         
-        let adminSection = '';
-        if (data.adminReplyImageUrl) {
+        let replySection = '';
+        if (data.replyImageUrl) {
             // If there is a reply, show it
-            adminSection = `
-                <div class="admin-reply-container">
-                    <strong>Admin Reply:</strong><br>
-                    <a href="${data.adminReplyImageUrl}">
-                        <img src="${data.adminReplyImageUrl}" alt="Admin reply image">
+            replySection = `
+                <div class="reply-container">
+                    <strong>Reply:</strong><br>
+                    <a href="${data.replyImageUrl}">
+                        <img src="${data.replyImageUrl}" alt="Reply image">
                     </a>
                 </div>
             `;
-        } else if (isAdmin) {
-            // If there's no reply AND it's an admin, show the reply controls
-            adminSection = `
-                <div class="admin-reply-container" id="reply-container-${postId}">
+        } else {
+            // If there's no reply, show the reply controls for everyone
+            replySection = `
+                <div class="reply-container" id="reply-container-${postId}">
                     <input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;">
                     <button class="reply-button" data-post-id="${postId}">Reply with Photo</button>
                 </div>
@@ -320,7 +316,7 @@
             <img src="${data.imageUrl}" alt="Uploaded image">
           </a>
           <br><br><strong>Comment:</strong><br>${data.comment}
-          ${adminSection}
+          ${replySection}
         `;
         postsContainer.appendChild(div);
       });
@@ -348,7 +344,7 @@
           const file = e.target.files[0];
           const postId = e.target.id.split('-')[2];
           if (file) {
-              handleAdminReply(postId, file);
+              handleReply(postId, file);
           }
       }
   });
