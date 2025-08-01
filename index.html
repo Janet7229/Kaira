@@ -17,6 +17,7 @@
     #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
     .replyBox { margin-top: 10px; background-color: #f9f9f9; padding: 10px; border-radius: 6px; }
     .replyBox textarea { height: 60px; }
+    .replyStatus { font-size: 0.9em; color: gray; margin-top: 5px; }
     @media (max-width: 600px) {
       body { padding: 10px; }
       .container { padding: 15px; }
@@ -48,7 +49,7 @@
     apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
     authDomain: "shamankingdata.firebaseapp.com",
     projectId: "shamankingdata",
-    storageBucket: "shamankingdata.firebasestorage.app",
+    storageBucket: "shamankingdata.appspot.com",
     messagingSenderId: "757444066890",
     appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
   };
@@ -67,7 +68,6 @@
   });
 
   const uploadButton = document.getElementById("uploadButton");
-
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
 
   async function uploadPost() {
@@ -75,6 +75,7 @@
         alert("Not connected. Please refresh the page.");
         return;
     }
+
     const fileInput = document.getElementById("imageInput");
     const comment = document.getElementById("commentInput").value.trim();
 
@@ -82,7 +83,7 @@
       alert("Please select an image and write a comment.");
       return;
     }
-    
+
     uploadButton.disabled = true;
     uploadButton.textContent = "Uploading...";
 
@@ -97,13 +98,12 @@
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
-        
+
         if (!counterDoc.exists()) {
-            throw "Counter document does not exist!";
+          throw "Counter document does not exist!";
         }
 
         const newReceiptNumber = counterDoc.data().count + 1;
-        
         transaction.update(counterRef, { count: newReceiptNumber });
 
         const postsColRef = collection(db, "posts");
@@ -130,40 +130,41 @@
       console.error("Upload failed:", error);
       alert("Upload failed. Please check the console for details.");
     } finally {
-        uploadButton.disabled = false;
-        uploadButton.textContent = "Upload";
-        loadPosts(); // reload to reflect
+      uploadButton.disabled = false;
+      uploadButton.textContent = "Upload";
+      loadPosts();
     }
   }
 
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
-        const img = new Image();
-        const reader = new FileReader();
-        reader.onload = e => {
-            img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.8);
-            };
-            img.onerror = () => reject(new Error("Image failed to load."));
-            img.src = e.target.result;
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = e => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.6);
         };
-        reader.onerror = () => reject(new Error("File reader failed."));
-        reader.readAsDataURL(file);
+        img.onerror = () => reject(new Error("Image load failed."));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error("File reader failed."));
+      reader.readAsDataURL(file);
     });
   }
 
-  async function handleReplyUpload(postId, file, comment) {
+  async function handleReplyUpload(postId, file, comment, statusElem) {
     if (!file || !comment.trim()) {
       alert("Please select an image and enter a comment.");
       return;
     }
 
     try {
+      statusElem.textContent = "Uploading reply...";
       const webpBlob = await convertToWebP(file);
       const storageRef = ref(storage, `replies/${Date.now()}.webp`);
       await uploadBytes(storageRef, webpBlob);
@@ -177,10 +178,10 @@
         uploaderId: currentUser.uid
       });
 
-      alert("Reply uploaded successfully!");
+      statusElem.textContent = "Reply uploaded successfully!";
     } catch (error) {
       console.error("Reply upload failed:", error);
-      alert("Reply upload failed.");
+      statusElem.textContent = "Reply upload failed.";
     }
   }
 
@@ -190,8 +191,10 @@
       const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
       container.innerHTML = "";
+
       if (snapshot.empty) {
         container.innerHTML = "No approved posts yet.";
+        return;
       }
 
       snapshot.forEach(docSnap => {
@@ -209,6 +212,7 @@
             <input type="file" accept="image/*" class="replyImage">
             <textarea class="replyComment" placeholder="Write a reply..."></textarea>
             <button class="replyBtn">Reply & Upload</button>
+            <div class="replyStatus"></div>
           </div>
         `;
         container.appendChild(div);
@@ -216,9 +220,10 @@
         const replyBtn = div.querySelector(".replyBtn");
         const replyImage = div.querySelector(".replyImage");
         const replyComment = div.querySelector(".replyComment");
+        const replyStatus = div.querySelector(".replyStatus");
 
         replyBtn.addEventListener("click", () => {
-          handleReplyUpload(postId, replyImage.files[0], replyComment.value);
+          handleReplyUpload(postId, replyImage.files[0], replyComment.value, replyStatus);
         });
       });
 
