@@ -77,25 +77,24 @@
       display: none;
       text-align: center;
     }
-    /* Admin Reply & Login Styles */
     .admin-reply-container {
       margin-top: 15px;
       padding-top: 15px;
       border-top: 1px solid #eee;
     }
     .reply-button {
-        background-color: #28a745; /* Green for admin action */
+      background-color: #28a745;
     }
     .reply-button:hover {
-        background-color: #218838;
+      background-color: #218838;
     }
-    #adminLoginButton {
-        background-color: #ffc107; /* Yellow */
-        color: #212529;
+    #logoutButton {
+      background-color: #dc3545;
     }
-    #adminLoginButton.logout {
-        background-color: #dc3545; /* Red */
-        color: white;
+    #loginError {
+      color: #dc3545;
+      margin-top: 10px;
+      text-align: center;
     }
     @media (max-width: 600px) {
       body { padding: 10px; }
@@ -111,28 +110,34 @@
   <img src="RInew(1).jpg" alt="Logo">
 </div>
 
-<div class="container">
+<div id="login-container" class="container">
+  <h2>Admin Login</h2>
+  <input type="email" id="emailInput" placeholder="Email">
+  <input type="password" id="passwordInput" placeholder="Password">
+  <button id="loginButton">Login</button>
+  <div id="loginError"></div>
+</div>
+
+<div id="main-content" class="container" style="display: none;">
+  <button id="logoutButton">Logout</button>
+  <hr style="margin-top:20px; margin-bottom: 20px;">
+  
   <h2>Upload Photo with Comment</h2>
   <input type="file" id="imageInput" accept="image/*"><br>
   <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
   <button id="uploadButton">Upload</button>
   <div id="receipt"></div>
 
-  <hr style="margin-top: 30px;">
-  
-  <div id="admin-area" style="margin-bottom: 20px;">
-    <button id="adminLoginButton">Admin Login</button>
-  </div>
-  
   <h3>Approved Posts</h3>
   <div id="postsContainer">Loading...</div>
 </div>
 
 <script type="module">
+  // --- Import necessary Firebase modules ---
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getFirestore, collection, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
   // --- Firebase Configuration ---
   const firebaseConfig = {
@@ -150,24 +155,66 @@
   const db = getFirestore(app);
   const auth = getAuth(app);
   
-  // --- Admin State Management [NEW] ---
-  // Check sessionStorage to see if user is already logged in for this session.
-  let isAdmin = sessionStorage.getItem('isAdmin') === 'true';
-
-  // --- Anonymous Authentication ---
-  let currentUser = null;
-  signInAnonymously(auth).catch(error => {
-    console.error("Anonymous sign-in failed:", error);
-    alert("Could not connect. Please refresh the page.");
-  });
-  auth.onAuthStateChanged(user => {
-    if (user) currentUser = user;
-  });
-
+  // --- DOM Element References ---
+  const loginContainer = document.getElementById('login-container');
+  const mainContent = document.getElementById('main-content');
+  const loginButton = document.getElementById('loginButton');
+  const logoutButton = document.getElementById('logoutButton');
+  const emailInputElement = document.getElementById('emailInput');
+  const passwordInputElement = document.getElementById('passwordInput');
+  const loginError = document.getElementById('loginError');
   const uploadButton = document.getElementById("uploadButton");
   const postsContainer = document.getElementById("postsContainer");
+  
+  let currentUser = null;
   let lightbox = new SimpleLightbox('.post a');
 
+  // --- Authentication State Observer ---
+  // This is the main controller for the UI.
+  onAuthStateChanged(auth, (user) => {
+    if (user && !user.isAnonymous) {
+      // User is logged in as an admin
+      currentUser = user;
+      loginContainer.style.display = 'none';
+      mainContent.style.display = 'block';
+      loadPosts(); // Load posts with admin controls
+    } else {
+      // User is logged out or is anonymous
+      currentUser = user; // May be null or the anonymous user
+      loginContainer.style.display = 'block';
+      mainContent.style.display = 'none';
+      if (!user) {
+        // If completely logged out, sign in anonymously for public view
+        signInAnonymously(auth).catch(err => console.error("Anonymous sign-in failed:", err));
+      }
+    }
+  });
+
+  // --- Login/Logout Event Listeners ---
+  loginButton.addEventListener('click', async () => {
+    const email = emailInputElement.value;
+    const password = passwordInputElement.value;
+    loginError.textContent = ''; // Clear previous errors
+
+    if (!email || !password) {
+      loginError.textContent = 'Please enter both email and password.';
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle the UI switch automatically
+    } catch (error) {
+      console.error("Login failed:", error.message);
+      loginError.textContent = "Login failed. Please check your credentials.";
+    }
+  });
+
+  logoutButton.addEventListener('click', () => {
+    signOut(auth);
+    // onAuthStateChanged will handle the UI switch automatically
+  });
+  
   // --- User Post Upload Function ---
   async function uploadPost() {
     if (!currentUser) {
@@ -184,7 +231,6 @@
     
     uploadButton.disabled = true;
     uploadButton.textContent = "Uploading...";
-
     const file = fileInput.files[0];
 
     try {
@@ -192,16 +238,12 @@
       const storageRef = ref(storage, `images/${Date.now()}.webp`);
       await uploadBytes(storageRef, webpBlob);
       const imageUrl = await getDownloadURL(storageRef);
-
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
-        
         if (!counterDoc.exists()) throw "Counter document does not exist!";
-
         const newReceiptNumber = counterDoc.data().count + 1;
         transaction.update(counterRef, { count: newReceiptNumber });
-
         const newPostRef = doc(collection(db, "posts"));
         transaction.set(newPostRef, {
           comment: comment,
@@ -213,11 +255,9 @@
         });
         return newReceiptNumber;
       });
-
       const receiptDiv = document.getElementById("receipt");
       receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
       receiptDiv.style.display = 'block';
-
       fileInput.value = '';
       document.getElementById("commentInput").value = '';
     } catch (error) {
@@ -255,22 +295,18 @@
   async function handleAdminReply(postId, file) {
     const replyButton = document.querySelector(`button[data-post-id="${postId}"]`);
     if (!replyButton) return;
-
     replyButton.disabled = true;
     replyButton.textContent = "Replying...";
-
     try {
         const webpBlob = await convertToWebP(file);
         const storageRef = ref(storage, `admin-replies/${postId}-${Date.now()}.webp`);
         await uploadBytes(storageRef, webpBlob);
         const adminReplyImageUrl = await getDownloadURL(storageRef);
-
         const postRef = doc(db, "posts", postId);
         await updateDoc(postRef, {
             adminReplyImageUrl: adminReplyImageUrl,
             adminReplyTimestamp: serverTimestamp()
         });
-
         const adminReplyContainer = document.getElementById(`reply-container-${postId}`);
         adminReplyContainer.innerHTML = `
             <strong>Admin Reply:</strong><br>
@@ -279,8 +315,7 @@
             </a>
         `;
         lightbox.refresh();
-    } catch (error)
-    {
+    } catch (error) {
         console.error("Admin reply failed:", error);
         alert("Admin reply failed. Please check the console.");
         replyButton.disabled = false;
@@ -290,47 +325,27 @@
 
   // --- Load and Display Posts Function ---
   async function loadPosts() {
+    if (!currentUser) return; // Don't load posts if not authenticated at all
+    // Check if the current user is an admin (logged in, not anonymous)
+    const isAdmin = currentUser && !currentUser.isAnonymous;
     try {
       const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
       postsContainer.innerHTML = "";
-      
-      if (snapshot.empty) {
-        postsContainer.innerHTML = "No approved posts yet.";
-      }
+      if (snapshot.empty) postsContainer.innerHTML = "No approved posts yet.";
       
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
         const postId = docSnap.id;
         const div = document.createElement("div");
         div.className = "post";
-        
         let adminSection = '';
         if (data.adminReplyImageUrl) {
-            adminSection = `
-                <div class="admin-reply-container">
-                    <strong>Admin Reply:</strong><br>
-                    <a href="${data.adminReplyImageUrl}">
-                        <img src="${data.adminReplyImageUrl}" alt="Admin reply image">
-                    </a>
-                </div>
-            `;
-        } else if (isAdmin) { // Check the global isAdmin variable
-            adminSection = `
-                <div class="admin-reply-container" id="reply-container-${postId}">
-                    <input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;">
-                    <button class="reply-button" data-post-id="${postId}">Reply with Photo</button>
-                </div>
-            `;
+            adminSection = `<div class="admin-reply-container"><strong>Admin Reply:</strong><br><a href="${data.adminReplyImageUrl}"><img src="${data.adminReplyImageUrl}" alt="Admin reply image"></a></div>`;
+        } else if (isAdmin) {
+            adminSection = `<div class="admin-reply-container" id="reply-container-${postId}"><input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;"><button class="reply-button" data-post-id="${postId}">Reply with Photo</button></div>`;
         }
-
-        div.innerHTML = `
-          <a href="${data.imageUrl}">
-            <img src="${data.imageUrl}" alt="Uploaded image">
-          </a>
-          <br><br><strong>Comment:</strong><br>${data.comment}
-          ${adminSection}
-        `;
+        div.innerHTML = `<a href="${data.imageUrl}"><img src="${data.imageUrl}" alt="Uploaded image"></a><br><br><strong>Comment:</strong><br>${data.comment}${adminSection}`;
         postsContainer.appendChild(div);
       });
       lightbox.refresh();
@@ -340,70 +355,21 @@
     }
   }
 
-  // --- Admin Login/Logout Functions [NEW] ---
-  function promptForAdminLogin() {
-    // WARNING: This is NOT a secure method for a real-world application,
-    // as the password is visible in the client-side source code.
-    const secretPassword = "change_this_password"; // <<< CHANGE THIS PASSWORD!
-    const enteredPassword = prompt("Please enter the admin password:");
-
-    if (enteredPassword === secretPassword) {
-        alert("Login successful!");
-        isAdmin = true;
-        sessionStorage.setItem('isAdmin', 'true');
-        updateAdminUI();
-        loadPosts(); // Reload posts to show admin controls
-    } else if (enteredPassword) { // if they entered something but it was wrong
-        alert("Incorrect password.");
-    }
-  }
-
-  function adminLogout() {
-    sessionStorage.removeItem('isAdmin');
-    isAdmin = false;
-    alert("You have been logged out.");
-    updateAdminUI();
-    loadPosts(); // Reload posts to hide admin controls
-  }
-
-  function updateAdminUI() {
-    const adminLoginButton = document.getElementById('adminLoginButton');
-    if (isAdmin) {
-        adminLoginButton.textContent = 'Admin Logout';
-        adminLoginButton.className = 'logout'; // Use class for styling
-        adminLoginButton.onclick = adminLogout;
-    } else {
-        adminLoginButton.textContent = 'Admin Login';
-        adminLoginButton.className = '';
-        adminLoginButton.onclick = promptForAdminLogin;
-    }
-  }
-  
-  // --- Event Listeners ---
+  // --- Event Listeners for Dynamic Content ---
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
-
-  // Use event delegation for dynamically created reply buttons
   postsContainer.addEventListener('click', e => {
     if (e.target && e.target.matches('button.reply-button')) {
         const postId = e.target.dataset.postId;
         document.getElementById(`reply-input-${postId}`).click();
     }
   });
-
-  // Use event delegation for dynamically created file inputs
   postsContainer.addEventListener('change', e => {
       if (e.target && e.target.matches('input[id^="reply-input-"]')) {
           const file = e.target.files[0];
           const postId = e.target.id.split('-')[2];
-          if (file) {
-              handleAdminReply(postId, file);
-          }
+          if (file) handleAdminReply(postId, file);
       }
   });
-  
-  // --- Initial Load ---
-  loadPosts();
-  updateAdminUI(); // Set the initial state of the admin button
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.js"></script>
