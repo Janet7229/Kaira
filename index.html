@@ -1,3 +1,4 @@
+<!-- Full code below. Only the script and relevant parts are changed. -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -15,7 +16,7 @@
     .post { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
     .post img, .reply img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; cursor: pointer; }
     .replyBox { margin-top: 10px; background-color: #f9f9f9; padding: 10px; border-radius: 6px; }
-    .replies { margin-top: 10px; padding-left: 10px; border-left: 2px solid #ccc; }
+    .replies { margin-top: 10px; padding-left: 10px; border-left: 2px solid #ccc; display: none; }
     .reply { margin-top: 10px; }
     #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
 
@@ -30,14 +31,14 @@
 <body>
 
 <div class="container">
-    <h2>Upload Photo with Comment</h2>
-    <input type="file" id="imageInput" accept="image/*"><br>
-    <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
-    <button id="uploadButton">Upload</button>
-    <div id="receipt"></div>
+  <h2>Upload Photo with Comment</h2>
+  <input type="file" id="imageInput" accept="image/*"><br>
+  <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
+  <button id="uploadButton">Upload</button>
+  <div id="receipt"></div>
 
-    <h3>Approved Posts</h3>
-    <div id="postsContainer">Loading...</div>
+  <h3>Approved Posts</h3>
+  <div id="postsContainer">Loading...</div>
 </div>
 
 <script type="module">
@@ -71,20 +72,12 @@
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
 
   async function uploadPost() {
-    if (!currentUser) {
-        alert("Not connected. Please refresh the page.");
-        return;
-    }
+    if (!currentUser) return alert("Please refresh and try again.");
     const fileInput = document.getElementById("imageInput");
     const comment = document.getElementById("commentInput").value.trim();
-
-    if (!fileInput.files[0] || !comment) {
-      alert("Please select an image and write a comment.");
-      return;
-    }
+    if (!fileInput.files[0] || !comment) return alert("Select an image and enter a comment.");
 
     const file = fileInput.files[0];
-
     const uploadButton = document.getElementById("uploadButton");
     uploadButton.disabled = true;
     uploadButton.textContent = "Uploading...";
@@ -98,32 +91,25 @@
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
-        if (!counterDoc.exists()) throw "Counter document does not exist!";
-        const newReceiptNumber = counterDoc.data().count + 1;
-        transaction.update(counterRef, { count: newReceiptNumber });
-
-        const postsColRef = collection(db, "posts");
-        const newPostRef = doc(postsColRef);
+        if (!counterDoc.exists()) throw "Missing counter document";
+        const newReceipt = counterDoc.data().count + 1;
+        transaction.update(counterRef, { count: newReceipt });
+        const newPostRef = doc(collection(db, "posts"));
         transaction.set(newPostRef, {
-          comment: comment,
-          imageUrl: imageUrl,
-          timestamp: serverTimestamp(),
-          isVisible: true,
-          receiptNumber: newReceiptNumber,
-          uploaderId: currentUser.uid
+          comment, imageUrl, isVisible: true,
+          receiptNumber: newReceipt, uploaderId: currentUser.uid,
+          timestamp: serverTimestamp()
         });
-
-        return newReceiptNumber;
+        return newReceipt;
       });
 
-      document.getElementById("receipt").innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
+      document.getElementById("receipt").innerHTML = `<strong>Upload Successful!</strong><br>Receipt #: <strong>${receiptNumber}</strong>`;
       document.getElementById("receipt").style.display = 'block';
-
       fileInput.value = '';
       document.getElementById("commentInput").value = '';
       loadPosts();
-    } catch (error) {
-      console.error("Upload failed:", error);
+    } catch (e) {
+      console.error(e);
       alert("Upload failed.");
     } finally {
       uploadButton.disabled = false;
@@ -133,8 +119,8 @@
 
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
-      const img = new Image();
       const reader = new FileReader();
+      const img = new Image();
       reader.onload = e => {
         img.onload = () => {
           const canvas = document.createElement("canvas");
@@ -142,7 +128,7 @@
           canvas.height = img.height;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0);
-          canvas.toBlob(blob => blob ? resolve(blob) : reject("Conversion failed"), "image/webp", 0.8);
+          canvas.toBlob(blob => blob ? resolve(blob) : reject("WebP conversion failed"), "image/webp", 0.8);
         };
         img.src = e.target.result;
       };
@@ -151,28 +137,21 @@
   }
 
   async function handleReplyUpload(postId, file) {
-    if (!file) {
-      alert("Please select an image.");
-      return;
-    }
-
+    if (!file) return alert("Please select an image.");
     try {
       const webpBlob = await convertToWebP(file);
       const storageRef = ref(storage, `replies/${Date.now()}.webp`);
       await uploadBytes(storageRef, webpBlob);
       const imageUrl = await getDownloadURL(storageRef);
-
       const replyRef = doc(collection(db, "posts", postId, "replies"));
       await setDoc(replyRef, {
-        imageUrl: imageUrl,
-        timestamp: serverTimestamp(),
-        uploaderId: currentUser.uid
+        imageUrl, uploaderId: currentUser.uid,
+        timestamp: serverTimestamp()
       });
-
-      alert("Reply uploaded successfully!");
+      alert("Reply uploaded!");
       loadPosts();
-    } catch (error) {
-      console.error("Reply upload failed:", error);
+    } catch (e) {
+      console.error(e);
       alert("Reply upload failed.");
     }
   }
@@ -184,42 +163,45 @@
       const snapshot = await getDocs(q);
       container.innerHTML = "";
 
-      if (snapshot.empty) {
-        container.innerHTML = "No approved posts yet.";
-      }
-
       for (const docSnap of snapshot.docs) {
         const data = docSnap.data();
         const postId = docSnap.id;
-
         const div = document.createElement("div");
         div.className = "post";
         div.innerHTML = `
-          <a href="${data.imageUrl}">
-            <img src="${data.imageUrl}" alt="uploaded image">
-          </a>
+          <a href="${data.imageUrl}"><img src="${data.imageUrl}" alt="uploaded image"></a>
           <br><strong>Comment:</strong><br>${data.comment}
           <div class="replyBox">
             <input type="file" accept="image/*" class="replyImage">
             <button class="replyBtn">Upload Reply</button>
+            <button class="toggleRepliesBtn">Show Replies</button>
           </div>
-          <div class="replies" id="replies-${postId}">Loading replies...</div>
+          <div class="replies" id="replies-${postId}"></div>
         `;
         container.appendChild(div);
 
         const replyBtn = div.querySelector(".replyBtn");
         const replyImage = div.querySelector(".replyImage");
+        replyBtn.addEventListener("click", () => handleReplyUpload(postId, replyImage.files[0]));
 
-        replyBtn.addEventListener("click", () => {
-          handleReplyUpload(postId, replyImage.files[0]);
+        const toggleBtn = div.querySelector(".toggleRepliesBtn");
+        const repliesDiv = div.querySelector(`#replies-${postId}`);
+        toggleBtn.addEventListener("click", () => {
+          if (repliesDiv.style.display === "none") {
+            repliesDiv.style.display = "block";
+            toggleBtn.textContent = "Hide Replies";
+          } else {
+            repliesDiv.style.display = "none";
+            toggleBtn.textContent = "Show Replies";
+          }
         });
 
-        loadReplies(postId);
+        await loadReplies(postId);
       }
 
       new SimpleLightbox('.post a');
     } catch (error) {
-      console.error("Error loading posts:", error);
+      console.error("Failed to load posts:", error);
       container.innerHTML = "Failed to load posts.";
     }
   }
@@ -227,31 +209,19 @@
   async function loadReplies(postId) {
     const repliesDiv = document.getElementById(`replies-${postId}`);
     try {
-      const repliesRef = collection(db, "posts", postId, "replies");
-      const q = query(repliesRef, orderBy("timestamp", "asc"));
+      const q = query(collection(db, "posts", postId, "replies"), orderBy("timestamp", "asc"));
       const snapshot = await getDocs(q);
-      repliesDiv.innerHTML = "";
-
-      if (snapshot.empty) {
-        repliesDiv.innerHTML = "<em>No replies yet.</em>";
-        return;
-      }
-
+      repliesDiv.innerHTML = snapshot.empty ? "<em>No replies yet.</em>" : "";
       snapshot.forEach(replySnap => {
         const reply = replySnap.data();
         const div = document.createElement("div");
         div.className = "reply";
-        div.innerHTML = `
-          <a href="${reply.imageUrl}">
-            <img src="${reply.imageUrl}" alt="reply image">
-          </a>
-        `;
+        div.innerHTML = `<a href="${reply.imageUrl}"><img src="${reply.imageUrl}" alt="reply image"></a>`;
         repliesDiv.appendChild(div);
       });
-
       new SimpleLightbox(`#replies-${postId} a`);
-    } catch (error) {
-      console.error("Error loading replies:", error);
+    } catch (e) {
+      console.error("Failed to load replies:", e);
       repliesDiv.innerHTML = "<em>Failed to load replies.</em>";
     }
   }
