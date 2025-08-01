@@ -77,28 +77,25 @@
       display: none;
       text-align: center;
     }
+    /* Admin Reply Styles */
     .admin-reply-container {
       margin-top: 15px;
       padding-top: 15px;
       border-top: 1px solid #eee;
     }
     .reply-button {
-      background-color: #28a745;
+        background-color: #28a745; /* Green for admin action */
     }
     .reply-button:hover {
-      background-color: #218838;
-    }
-    #logoutButton {
-      background-color: #dc3545;
-    }
-    #loginError {
-      color: #dc3545;
-      margin-top: 10px;
-      text-align: center;
+        background-color: #218838;
     }
     @media (max-width: 600px) {
-      body { padding: 10px; }
-      .container { padding: 15px; }
+      body {
+        padding: 10px;
+      }
+      .container {
+        padding: 15px;
+      }
       h2 { font-size: 1.5em; }
       h3 { font-size: 1.2em; }
     }
@@ -110,18 +107,7 @@
   <img src="RInew(1).jpg" alt="Logo">
 </div>
 
-<div id="login-container" class="container">
-  <h2>Admin Login</h2>
-  <input type="email" id="emailInput" placeholder="Email">
-  <input type="password" id="passwordInput" placeholder="Password">
-  <button id="loginButton">Login</button>
-  <div id="loginError"></div>
-</div>
-
-<div id="main-content" class="container" style="display: none;">
-  <button id="logoutButton">Logout</button>
-  <hr style="margin-top:20px; margin-bottom: 20px;">
-  
+<div class="container">
   <h2>Upload Photo with Comment</h2>
   <input type="file" id="imageInput" accept="image/*"><br>
   <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
@@ -133,11 +119,10 @@
 </div>
 
 <script type="module">
-  // --- Import necessary Firebase modules ---
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getFirestore, collection, getDocs, query, where, orderBy, serverTimestamp, runTransaction, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
   // --- Firebase Configuration ---
   const firebaseConfig = {
@@ -155,66 +140,24 @@
   const db = getFirestore(app);
   const auth = getAuth(app);
   
-  // --- DOM Element References ---
-  const loginContainer = document.getElementById('login-container');
-  const mainContent = document.getElementById('main-content');
-  const loginButton = document.getElementById('loginButton');
-  const logoutButton = document.getElementById('logoutButton');
-  const emailInputElement = document.getElementById('emailInput');
-  const passwordInputElement = document.getElementById('passwordInput');
-  const loginError = document.getElementById('loginError');
+  // --- Admin Check ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const isAdmin = urlParams.get('admin') === 'true';
+
+  // --- Anonymous Authentication ---
+  let currentUser = null;
+  signInAnonymously(auth).catch(error => {
+    console.error("Anonymous sign-in failed:", error);
+    alert("Could not connect. Please refresh the page.");
+  });
+  auth.onAuthStateChanged(user => {
+    if (user) currentUser = user;
+  });
+
   const uploadButton = document.getElementById("uploadButton");
   const postsContainer = document.getElementById("postsContainer");
-  
-  let currentUser = null;
   let lightbox = new SimpleLightbox('.post a');
 
-  // --- Authentication State Observer ---
-  // This is the main controller for the UI.
-  onAuthStateChanged(auth, (user) => {
-    if (user && !user.isAnonymous) {
-      // User is logged in as an admin
-      currentUser = user;
-      loginContainer.style.display = 'none';
-      mainContent.style.display = 'block';
-      loadPosts(); // Load posts with admin controls
-    } else {
-      // User is logged out or is anonymous
-      currentUser = user; // May be null or the anonymous user
-      loginContainer.style.display = 'block';
-      mainContent.style.display = 'none';
-      if (!user) {
-        // If completely logged out, sign in anonymously for public view
-        signInAnonymously(auth).catch(err => console.error("Anonymous sign-in failed:", err));
-      }
-    }
-  });
-
-  // --- Login/Logout Event Listeners ---
-  loginButton.addEventListener('click', async () => {
-    const email = emailInputElement.value;
-    const password = passwordInputElement.value;
-    loginError.textContent = ''; // Clear previous errors
-
-    if (!email || !password) {
-      loginError.textContent = 'Please enter both email and password.';
-      return;
-    }
-
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle the UI switch automatically
-    } catch (error) {
-      console.error("Login failed:", error.message);
-      loginError.textContent = "Login failed. Please check your credentials.";
-    }
-  });
-
-  logoutButton.addEventListener('click', () => {
-    signOut(auth);
-    // onAuthStateChanged will handle the UI switch automatically
-  });
-  
   // --- User Post Upload Function ---
   async function uploadPost() {
     if (!currentUser) {
@@ -231,6 +174,7 @@
     
     uploadButton.disabled = true;
     uploadButton.textContent = "Uploading...";
+
     const file = fileInput.files[0];
 
     try {
@@ -238,12 +182,16 @@
       const storageRef = ref(storage, `images/${Date.now()}.webp`);
       await uploadBytes(storageRef, webpBlob);
       const imageUrl = await getDownloadURL(storageRef);
+
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
+        
         if (!counterDoc.exists()) throw "Counter document does not exist!";
+
         const newReceiptNumber = counterDoc.data().count + 1;
         transaction.update(counterRef, { count: newReceiptNumber });
+
         const newPostRef = doc(collection(db, "posts"));
         transaction.set(newPostRef, {
           comment: comment,
@@ -255,9 +203,11 @@
         });
         return newReceiptNumber;
       });
+
       const receiptDiv = document.getElementById("receipt");
       receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
       receiptDiv.style.display = 'block';
+
       fileInput.value = '';
       document.getElementById("commentInput").value = '';
     } catch (error) {
@@ -291,22 +241,26 @@
     });
   }
   
-  // --- Admin Reply Function ---
+  // --- Admin Reply Function [NEW] ---
   async function handleAdminReply(postId, file) {
     const replyButton = document.querySelector(`button[data-post-id="${postId}"]`);
     if (!replyButton) return;
+
     replyButton.disabled = true;
     replyButton.textContent = "Replying...";
+
     try {
         const webpBlob = await convertToWebP(file);
         const storageRef = ref(storage, `admin-replies/${postId}-${Date.now()}.webp`);
         await uploadBytes(storageRef, webpBlob);
         const adminReplyImageUrl = await getDownloadURL(storageRef);
+
         const postRef = doc(db, "posts", postId);
         await updateDoc(postRef, {
             adminReplyImageUrl: adminReplyImageUrl,
             adminReplyTimestamp: serverTimestamp()
         });
+
         const adminReplyContainer = document.getElementById(`reply-container-${postId}`);
         adminReplyContainer.innerHTML = `
             <strong>Admin Reply:</strong><br>
@@ -323,29 +277,51 @@
     }
   }
 
-  // --- Load and Display Posts Function ---
+  // --- Load and Display Posts Function [MODIFIED] ---
   async function loadPosts() {
-    if (!currentUser) return; // Don't load posts if not authenticated at all
-    // Check if the current user is an admin (logged in, not anonymous)
-    const isAdmin = currentUser && !currentUser.isAnonymous;
     try {
       const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
       postsContainer.innerHTML = "";
-      if (snapshot.empty) postsContainer.innerHTML = "No approved posts yet.";
+      
+      if (snapshot.empty) {
+        postsContainer.innerHTML = "No approved posts yet.";
+      }
       
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
         const postId = docSnap.id;
         const div = document.createElement("div");
         div.className = "post";
+        
         let adminSection = '';
         if (data.adminReplyImageUrl) {
-            adminSection = `<div class="admin-reply-container"><strong>Admin Reply:</strong><br><a href="${data.adminReplyImageUrl}"><img src="${data.adminReplyImageUrl}" alt="Admin reply image"></a></div>`;
+            // If there is a reply, show it
+            adminSection = `
+                <div class="admin-reply-container">
+                    <strong>Admin Reply:</strong><br>
+                    <a href="${data.adminReplyImageUrl}">
+                        <img src="${data.adminReplyImageUrl}" alt="Admin reply image">
+                    </a>
+                </div>
+            `;
         } else if (isAdmin) {
-            adminSection = `<div class="admin-reply-container" id="reply-container-${postId}"><input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;"><button class="reply-button" data-post-id="${postId}">Reply with Photo</button></div>`;
+            // If there's no reply AND it's an admin, show the reply controls
+            adminSection = `
+                <div class="admin-reply-container" id="reply-container-${postId}">
+                    <input type="file" id="reply-input-${postId}" accept="image/*" style="display: none;">
+                    <button class="reply-button" data-post-id="${postId}">Reply with Photo</button>
+                </div>
+            `;
         }
-        div.innerHTML = `<a href="${data.imageUrl}"><img src="${data.imageUrl}" alt="Uploaded image"></a><br><br><strong>Comment:</strong><br>${data.comment}${adminSection}`;
+
+        div.innerHTML = `
+          <a href="${data.imageUrl}">
+            <img src="${data.imageUrl}" alt="Uploaded image">
+          </a>
+          <br><br><strong>Comment:</strong><br>${data.comment}
+          ${adminSection}
+        `;
         postsContainer.appendChild(div);
       });
       lightbox.refresh();
@@ -355,21 +331,30 @@
     }
   }
 
-  // --- Event Listeners for Dynamic Content ---
+  // --- Event Listeners ---
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
+
+  // Use event delegation for dynamically created reply buttons
   postsContainer.addEventListener('click', e => {
     if (e.target && e.target.matches('button.reply-button')) {
         const postId = e.target.dataset.postId;
         document.getElementById(`reply-input-${postId}`).click();
     }
   });
+
+  // Use event delegation for dynamically created file inputs
   postsContainer.addEventListener('change', e => {
       if (e.target && e.target.matches('input[id^="reply-input-"]')) {
           const file = e.target.files[0];
           const postId = e.target.id.split('-')[2];
-          if (file) handleAdminReply(postId, file);
+          if (file) {
+              handleAdminReply(postId, file);
+          }
       }
   });
+  
+  // --- Initial Load ---
+  loadPosts();
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.js"></script>
