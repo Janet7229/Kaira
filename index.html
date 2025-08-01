@@ -1,3 +1,4 @@
+<!-- REPLACE your old HTML with this full updated version -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -5,98 +6,93 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.css" />
   <style>
-    body { 
-      font-family: sans-serif; 
-      padding: 20px; 
-      background-color: #f4f4f4; 
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
       margin: 0;
     }
-    .container { 
-      max-width: 500px; 
-      margin: auto; 
-      background: white; 
-      padding: 20px; 
-      border-radius: 8px; 
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+    .container {
+      max-width: 500px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
-    input, textarea, button { 
-      width: 100%; 
-      padding: 12px; 
-      margin-bottom: 10px; 
-      box-sizing: border-box; 
-      border: 1px solid #ccc; 
-      border-radius: 4px; 
+    input, textarea, button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
       font-size: 1em;
     }
-    button { 
-      background-color: #007bff; 
-      color: white; 
-      border: none; 
-      cursor: pointer; 
-      font-weight: bold; 
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
     }
-    button:hover { 
-      background-color: #0056b3; 
+    button:hover {
+      background-color: #0056b3;
     }
-    button:disabled { 
-      background-color: #ccc; 
+    button:disabled {
+      background-color: #ccc;
     }
-    h2, h3 { 
-      color: #333; 
+    h2, h3 {
+      color: #333;
     }
-    .post { 
-      margin-top: 20px; 
-      border: 1px solid #ccc; 
-      padding: 10px; 
-      border-radius: 8px; 
+    .post {
+      margin-top: 20px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 8px;
     }
-    /* Make images responsive */
-    .post img { 
-      max-width: 100%; 
+    .post img {
+      max-width: 100%;
       height: auto;
-      border-radius: 4px; 
-      margin-top: 10px; 
+      border-radius: 4px;
+      margin-top: 10px;
       cursor: pointer;
     }
-    #receipt { 
-      margin-top: 20px; 
-      padding: 15px; 
-      background-color: #d4edda; 
-      color: #155724; 
-      border: 1px solid #c3e6cb; 
-      border-radius: 4px; 
-      display: none; 
-      text-align: center; 
+    #receipt, #replyReceipt {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      border-radius: 4px;
+      display: none;
+      text-align: center;
     }
-
-    /* Media Query for mobile screens */
     @media (max-width: 600px) {
-      body {
-        padding: 10px;
-      }
-      .container {
-        padding: 15px;
-      }
-      h2 {
-        font-size: 1.5em;
-      }
-      h3 {
-        font-size: 1.2em;
-      }
+      body { padding: 10px; }
+      .container { padding: 15px; }
+      h2 { font-size: 1.5em; }
+      h3 { font-size: 1.2em; }
     }
   </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Upload Photo with Comment</h2>
-    <input type="file" id="imageInput" accept="image/*"><br>
-    <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea><br>
-    <button id="uploadButton">Upload</button>
-    <div id="receipt"></div>
+  <h2>Upload Photo with Comment</h2>
+  <input type="file" id="imageInput" accept="image/*">
+  <textarea id="commentInput" placeholder="Enter your comment" rows="4"></textarea>
+  <button id="uploadButton">Upload</button>
 
-    <h3>Approved Posts</h3>
-    <div id="postsContainer">Loading...</div>
+  <h2>Reply Upload (Photo Only)</h2>
+  <input type="file" id="replyImageInput" accept="image/*">
+  <button id="replyUploadButton">Upload Reply Photo</button>
+
+  <div id="receipt"></div>
+  <div id="replyReceipt"></div>
+
+  <h3>Approved Posts</h3>
+  <div id="postsContainer">Loading...</div>
 </div>
 
 <script type="module">
@@ -109,7 +105,7 @@
     apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
     authDomain: "shamankingdata.firebaseapp.com",
     projectId: "shamankingdata",
-    storageBucket: "shamankingdata.firebasestorage.app",
+    storageBucket: "shamankingdata.appspot.com",
     messagingSenderId: "757444066890",
     appId: "1:757444066890:web:e4f9d41e2905e588d930b3"
   };
@@ -127,90 +123,91 @@
     alert("Could not connect. Please refresh the page.");
   });
 
-  const uploadButton = document.getElementById("uploadButton");
+  async function uploadImageWithComment(isReply = false) {
+    const fileInput = document.getElementById(isReply ? "replyImageInput" : "imageInput");
+    const comment = isReply ? "" : document.getElementById("commentInput").value.trim();
+    const button = document.getElementById(isReply ? "replyUploadButton" : "uploadButton");
+    const receiptDiv = document.getElementById(isReply ? "replyReceipt" : "receipt");
 
-  async function uploadPost() {
     if (!currentUser) {
-        alert("Not connected. Please refresh the page.");
-        return;
-    }
-    const fileInput = document.getElementById("imageInput");
-    const comment = document.getElementById("commentInput").value.trim();
-
-    if (!fileInput.files[0] || !comment) {
-      alert("Please select an image and write a comment.");
+      alert("Not connected. Please refresh the page.");
       return;
     }
-    
-    uploadButton.disabled = true;
-    uploadButton.textContent = "Uploading...";
 
-    const file = fileInput.files[0];
+    if (!fileInput.files[0]) {
+      alert("Please select an image.");
+      return;
+    }
+
+    if (!isReply && !comment) {
+      alert("Please enter a comment.");
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Uploading...";
 
     try {
-      const webpBlob = await convertToWebP(file);
-      const storageRef = ref(storage, `images/${Date.now()}.webp`);
+      const webpBlob = await convertToWebP(fileInput.files[0]);
+      const storageRef = ref(storage, `images/${Date.now()}_${isReply ? 'reply' : 'post'}.webp`);
       await uploadBytes(storageRef, webpBlob);
       const imageUrl = await getDownloadURL(storageRef);
 
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
-        
-        if (!counterDoc.exists()) {
-            throw "Counter document does not exist!";
-        }
 
+        if (!counterDoc.exists()) throw "Counter document does not exist!";
         const newReceiptNumber = counterDoc.data().count + 1;
-        
+
         transaction.update(counterRef, { count: newReceiptNumber });
 
         const postsColRef = collection(db, "posts");
         transaction.set(doc(postsColRef), {
-          comment: comment,
-          imageUrl: imageUrl,
+          comment,
+          imageUrl,
           timestamp: serverTimestamp(),
           isVisible: false,
           receiptNumber: newReceiptNumber,
-          uploaderId: currentUser.uid
+          uploaderId: currentUser.uid,
+          isReply
         });
 
         return newReceiptNumber;
       });
 
-      const receiptDiv = document.getElementById("receipt");
-      receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
+      receiptDiv.innerHTML = `<strong>${isReply ? "Reply" : "Post"} Upload Successful!</strong><br>Receipt Number: <strong>${receiptNumber}</strong>`;
       receiptDiv.style.display = 'block';
 
       fileInput.value = '';
-      document.getElementById("commentInput").value = '';
+      if (!isReply) document.getElementById("commentInput").value = '';
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Upload failed. Please check the console for details.");
+      alert("Upload failed.");
     } finally {
-        uploadButton.disabled = false;
-        uploadButton.textContent = "Upload";
+      button.disabled = false;
+      button.textContent = isReply ? "Upload Reply Photo" : "Upload";
     }
   }
 
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
-        const img = new Image();
-        const reader = new FileReader();
-        reader.onload = e => {
-            img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.8);
-            };
-            img.onerror = () => reject(new Error("Image failed to load."));
-            img.src = e.target.result;
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = e => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.8);
         };
-        reader.onerror = () => reject(new Error("File reader failed."));
-        reader.readAsDataURL(file);
+        img.onerror = () => reject(new Error("Image load failed."));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error("File reader failed."));
+      reader.readAsDataURL(file);
     });
   }
 
@@ -227,26 +224,24 @@
         const data = doc.data();
         const div = document.createElement("div");
         div.className = "post";
-        // ** MODIFIED LINE **
         div.innerHTML = `
           <a href="${data.imageUrl}">
             <img src="${data.imageUrl}" alt="uploaded image">
           </a>
-          <br><strong>Comment:</strong><br>${data.comment}
+          ${data.comment ? `<br><strong>Comment:</strong><br>${data.comment}` : ""}
         `;
         container.appendChild(div);
       });
-      
-      // ** ADDED LINE **
       new SimpleLightbox('.post a');
-
     } catch (error) {
       console.error("Error loading posts:", error);
       container.innerHTML = "Failed to load posts.";
     }
   }
-  
-  document.getElementById('uploadButton').addEventListener('click', uploadPost);
+
+  document.getElementById('uploadButton').addEventListener('click', () => uploadImageWithComment(false));
+  document.getElementById('replyUploadButton').addEventListener('click', () => uploadImageWithComment(true));
+
   loadPosts();
 </script>
 
