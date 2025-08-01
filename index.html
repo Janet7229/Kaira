@@ -1,130 +1,81 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Upload and Reply to Images</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.css" />
+  <title>Post with Replies</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
-    .image-container { margin-bottom: 30px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fff; }
-    .image-container img { max-width: 100%; border-radius: 8px; }
-    .replies { margin-top: 10px; padding-left: 20px; }
-    .reply-form { display: none; margin-top: 10px; }
-    .reply-form input[type="file"] { display: block; margin-bottom: 10px; }
-    .btn { padding: 6px 12px; border: none; background-color: #007bff; color: white; border-radius: 4px; cursor: pointer; }
-    .btn:hover { background-color: #0056b3; }
+    .post { margin-bottom: 20px; border: 1px solid #ccc; padding: 10px; }
+    .replies { margin-left: 20px; }
   </style>
 </head>
 <body>
 
-<h2>Upload Image</h2>
-<input type="file" id="imageInput">
-<button class="btn" onclick="uploadImage()">Upload</button>
-<div id="gallery"></div>
+  <h2>Upload a Post</h2>
+  <input type="file" id="postFile">
+  <button onclick="uploadPost()">Upload Post</button>
 
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/simplelightbox/2.14.3/simple-lightbox.min.js"></script>
+  <h2>Posts</h2>
+  <div id="postList"></div>
 
-<script>
-const firebaseConfig = {
-  apiKey: "AIzaSyD_5YgdpDfpa0dJtcfkUii_UjCKO9oF4J0",
-  authDomain: "shamankingdata.firebaseapp.com",
-  projectId: "shamankingdata",
-  storageBucket: "shamankingdata.appspot.com",
-  messagingSenderId: "757444066890",
-  appId: "1:757444066890:web:e4f9d41e2905e588d930b3",
-  measurementId: "G-DD8SFH6MYD"
-};
+  <script>
+    // ✅ Your Firebase config here
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
 
-firebase.initializeApp(firebaseConfig);
-const storage = firebase.storage();
+    firebase.initializeApp(firebaseConfig);
+    const storage = firebase.storage();
 
-function uploadImage() {
-  const file = document.getElementById("imageInput").files[0];
-  if (!file) return;
-  const timestamp = Date.now();
-  const storageRef = storage.ref(`images/${timestamp}_post.webp`);
+    // ✅ Anonymous sign-in to satisfy storage rules
+    firebase.auth().signInAnonymously().catch(console.error);
 
-  file.arrayBuffer().then(buffer => {
-    createImageBitmap(new Blob([buffer])).then(bitmap => {
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(bitmap, 0, 0);
-      canvas.toBlob(blob => {
-        storageRef.put(blob).then(() => loadImages());
-      }, "image/webp", 0.8);
-    });
-  });
-}
-
-function uploadReply(parentId, inputId) {
-  const file = document.getElementById(inputId).files[0];
-  if (!file) return;
-  const timestamp = Date.now();
-  const replyRef = storage.ref(`replies/${timestamp}_reply.webp`);
-
-  file.arrayBuffer().then(buffer => {
-    createImageBitmap(new Blob([buffer])).then(bitmap => {
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(bitmap, 0, 0);
-      canvas.toBlob(blob => {
-        replyRef.put(blob).then(() => loadImages());
-      }, "image/webp", 0.8);
-    });
-  });
-}
-
-function loadImages() {
-  const gallery = document.getElementById("gallery");
-  gallery.innerHTML = "Loading...";
-  storage.ref("images").listAll().then(res => {
-    const promises = res.items.map(item => item.getDownloadURL());
-    Promise.all(promises).then(urls => {
-      gallery.innerHTML = "";
-      urls.forEach(url => {
-        const id = url.split("/").pop().split("_")[0];
-        const container = document.createElement("div");
-        container.className = "image-container";
-        container.innerHTML = `
-          <img src="${url}">
-          <button class="btn" onclick="toggleReplyForm('${id}')">💬 Reply</button>
-          <div class="reply-form" id="replyForm-${id}">
-            <input type="file" id="replyInput-${id}">
-            <button class="btn" onclick="uploadReply('${id}', 'replyInput-${id}')">Send Reply</button>
-          </div>
-          <div class="replies" id="replies-${id}"></div>
-        `;
-        gallery.appendChild(container);
-        loadReplies(id);
+    function uploadPost() {
+      const file = document.getElementById('postFile').files[0];
+      if (!file) return alert("Select a file first.");
+      const timestamp = Date.now();
+      const ref = storage.ref(`images/${timestamp}.webp`);
+      ref.put(file).then(() => {
+        ref.getDownloadURL().then(url => {
+          addPostToPage(url, timestamp);
+        });
       });
-    });
-  });
-}
+    }
 
-function toggleReplyForm(id) {
-  const form = document.getElementById(`replyForm-${id}`);
-  form.style.display = form.style.display === "none" ? "block" : "none";
-}
+    function addPostToPage(url, postId) {
+      const postDiv = document.createElement('div');
+      postDiv.className = 'post';
+      postDiv.innerHTML = `
+        <img src="${url}" width="200"><br>
+        <input type="file" id="replyFile-${postId}">
+        <button onclick="uploadReply('${postId}')">Reply</button>
+        <div class="replies" id="replies-${postId}"></div>
+      `;
+      document.getElementById('postList').prepend(postDiv);
+    }
 
-function loadReplies(parentId) {
-  const container = document.getElementById(`replies-${parentId}`);
-  if (!container) return;
-  storage.ref("replies").listAll().then(res => {
-    const filtered = res.items.filter(item => item.name.includes(parentId));
-    const promises = filtered.map(item => item.getDownloadURL());
-    Promise.all(promises).then(urls => {
-      container.innerHTML = urls.map(url => `<img src="${url}" style="max-width: 100px; margin: 5px;">`).join("");
-    });
-  });
-}
+    function uploadReply(postId) {
+      const fileInput = document.getElementById(`replyFile-${postId}`);
+      const file = fileInput.files[0];
+      if (!file) return alert("Select a reply image.");
+      const timestamp = Date.now();
+      const replyRef = storage.ref(`replies/${postId}/${timestamp}.webp`);
+      replyRef.put(file).then(() => {
+        replyRef.getDownloadURL().then(url => {
+          const replyImg = document.createElement('img');
+          replyImg.src = url;
+          replyImg.width = 100;
+          document.getElementById(`replies-${postId}`).appendChild(replyImg);
+        });
+      });
+    }
+  </script>
 
-loadImages();
-</script>
 </body>
 </html>
