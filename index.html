@@ -13,10 +13,12 @@
     button:disabled { background-color: #ccc; }
     h2, h3 { color: #333; }
     .post { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
-    .post img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; cursor: pointer; }
-    #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
+    .post img, .reply img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; cursor: pointer; }
     .replyBox { margin-top: 10px; background-color: #f9f9f9; padding: 10px; border-radius: 6px; }
-    .replyBox textarea { height: 60px; }
+    .replies { margin-top: 10px; padding-left: 10px; border-left: 2px solid #ccc; }
+    .reply { margin-top: 10px; }
+    #receipt { margin-top: 20px; padding: 15px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; display: none; text-align: center; }
+
     @media (max-width: 600px) {
       body { padding: 10px; }
       .container { padding: 15px; }
@@ -66,8 +68,6 @@
     alert("Could not connect. Please refresh the page.");
   });
 
-  const uploadButton = document.getElementById("uploadButton");
-
   document.getElementById('uploadButton').addEventListener('click', uploadPost);
 
   async function uploadPost() {
@@ -82,11 +82,12 @@
       alert("Please select an image and write a comment.");
       return;
     }
-    
-    uploadButton.disabled = true;
-    uploadButton.textContent = "Uploading...";
 
     const file = fileInput.files[0];
+
+    const uploadButton = document.getElementById("uploadButton");
+    uploadButton.disabled = true;
+    uploadButton.textContent = "Uploading...";
 
     try {
       const webpBlob = await convertToWebP(file);
@@ -97,13 +98,8 @@
       const receiptNumber = await runTransaction(db, async (transaction) => {
         const counterRef = doc(db, "counters", "postCounter");
         const counterDoc = await transaction.get(counterRef);
-        
-        if (!counterDoc.exists()) {
-            throw "Counter document does not exist!";
-        }
-
+        if (!counterDoc.exists()) throw "Counter document does not exist!";
         const newReceiptNumber = counterDoc.data().count + 1;
-        
         transaction.update(counterRef, { count: newReceiptNumber });
 
         const postsColRef = collection(db, "posts");
@@ -112,7 +108,7 @@
           comment: comment,
           imageUrl: imageUrl,
           timestamp: serverTimestamp(),
-          isVisible: false,
+          isVisible: true,
           receiptNumber: newReceiptNumber,
           uploaderId: currentUser.uid
         });
@@ -120,46 +116,43 @@
         return newReceiptNumber;
       });
 
-      const receiptDiv = document.getElementById("receipt");
-      receiptDiv.innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
-      receiptDiv.style.display = 'block';
+      document.getElementById("receipt").innerHTML = `<strong>Upload Successful!</strong><br>Your Receipt Number is: <strong>${receiptNumber}</strong>`;
+      document.getElementById("receipt").style.display = 'block';
 
       fileInput.value = '';
       document.getElementById("commentInput").value = '';
+      loadPosts();
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Upload failed. Please check the console for details.");
+      alert("Upload failed.");
     } finally {
-        uploadButton.disabled = false;
-        uploadButton.textContent = "Upload";
-        loadPosts(); // reload to reflect
+      uploadButton.disabled = false;
+      uploadButton.textContent = "Upload";
     }
   }
 
   function convertToWebP(file) {
     return new Promise((resolve, reject) => {
-        const img = new Image();
-        const reader = new FileReader();
-        reader.onload = e => {
-            img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas to Blob failed.")), "image/webp", 0.8);
-            };
-            img.onerror = () => reject(new Error("Image failed to load."));
-            img.src = e.target.result;
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = e => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(blob => blob ? resolve(blob) : reject("Conversion failed"), "image/webp", 0.8);
         };
-        reader.onerror = () => reject(new Error("File reader failed."));
-        reader.readAsDataURL(file);
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
     });
   }
 
-  async function handleReplyUpload(postId, file, comment) {
-    if (!file || !comment.trim()) {
-      alert("Please select an image and enter a comment.");
+  async function handleReplyUpload(postId, file) {
+    if (!file) {
+      alert("Please select an image.");
       return;
     }
 
@@ -171,13 +164,13 @@
 
       const replyRef = doc(collection(db, "posts", postId, "replies"));
       await setDoc(replyRef, {
-        comment: comment,
         imageUrl: imageUrl,
         timestamp: serverTimestamp(),
         uploaderId: currentUser.uid
       });
 
       alert("Reply uploaded successfully!");
+      loadPosts();
     } catch (error) {
       console.error("Reply upload failed:", error);
       alert("Reply upload failed.");
@@ -190,11 +183,12 @@
       const q = query(collection(db, "posts"), where("isVisible", "==", true), orderBy("timestamp", "desc"));
       const snapshot = await getDocs(q);
       container.innerHTML = "";
+
       if (snapshot.empty) {
         container.innerHTML = "No approved posts yet.";
       }
 
-      snapshot.forEach(docSnap => {
+      for (const docSnap of snapshot.docs) {
         const data = docSnap.data();
         const postId = docSnap.id;
 
@@ -207,25 +201,58 @@
           <br><strong>Comment:</strong><br>${data.comment}
           <div class="replyBox">
             <input type="file" accept="image/*" class="replyImage">
-            <textarea class="replyComment" placeholder="Write a reply..."></textarea>
-            <button class="replyBtn">Reply & Upload</button>
+            <button class="replyBtn">Upload Reply</button>
           </div>
+          <div class="replies" id="replies-${postId}">Loading replies...</div>
         `;
         container.appendChild(div);
 
         const replyBtn = div.querySelector(".replyBtn");
         const replyImage = div.querySelector(".replyImage");
-        const replyComment = div.querySelector(".replyComment");
 
         replyBtn.addEventListener("click", () => {
-          handleReplyUpload(postId, replyImage.files[0], replyComment.value);
+          handleReplyUpload(postId, replyImage.files[0]);
         });
-      });
+
+        loadReplies(postId);
+      }
 
       new SimpleLightbox('.post a');
     } catch (error) {
       console.error("Error loading posts:", error);
       container.innerHTML = "Failed to load posts.";
+    }
+  }
+
+  async function loadReplies(postId) {
+    const repliesDiv = document.getElementById(`replies-${postId}`);
+    try {
+      const repliesRef = collection(db, "posts", postId, "replies");
+      const q = query(repliesRef, orderBy("timestamp", "asc"));
+      const snapshot = await getDocs(q);
+      repliesDiv.innerHTML = "";
+
+      if (snapshot.empty) {
+        repliesDiv.innerHTML = "<em>No replies yet.</em>";
+        return;
+      }
+
+      snapshot.forEach(replySnap => {
+        const reply = replySnap.data();
+        const div = document.createElement("div");
+        div.className = "reply";
+        div.innerHTML = `
+          <a href="${reply.imageUrl}">
+            <img src="${reply.imageUrl}" alt="reply image">
+          </a>
+        `;
+        repliesDiv.appendChild(div);
+      });
+
+      new SimpleLightbox(`#replies-${postId} a`);
+    } catch (error) {
+      console.error("Error loading replies:", error);
+      repliesDiv.innerHTML = "<em>Failed to load replies.</em>";
     }
   }
 
