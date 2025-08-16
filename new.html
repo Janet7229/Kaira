@@ -90,6 +90,15 @@
       </div>
     </form>
   </div>
+  
+  <!-- Generate Sample Data Button -->
+  <div class="w-full max-w-lg mt-2">
+      <button type="button" id="generate_data_btn"
+              class="w-full py-2 rounded-md text-white bg-purple-500 hover:bg-purple-600">
+        Generate 30 Sample Swimmers
+      </button>
+  </div>
+
 
   <!-- Swimmers List -->
   <div id="swimmers_list_container" class="w-full max-w-lg mt-4"></div>
@@ -104,10 +113,11 @@
 
   <!-- Firebase + App Logic -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+    // Updated Firebase imports to a more recent version
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, doc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // Firebase Config
+    // Your web app's Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyCZt6KtFQmU1U8ae7dwa3F4MMtVEY_2AiY",
       authDomain: "swimmingcompetition-91229.firebaseapp.com",
@@ -118,8 +128,16 @@
     };
 
     // Init Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    let app;
+    let db;
+    try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+    } catch (e) {
+        console.error("Firebase initialization failed. Please check your firebaseConfig.", e);
+        showMessage("Firebase config is invalid. App cannot save data.", "error");
+    }
+    
 
     // --- DOM References ---
     const swimmerForm = document.getElementById('swimmer_form');
@@ -132,6 +150,7 @@
     const addSwimmerBtn = document.getElementById('add_swimmer_btn');
     const updateSwimmerBtn = document.getElementById('update_swimmer_btn');
     const cancelEditBtn = document.getElementById('cancel_edit_btn');
+    const generateDataBtn = document.getElementById('generate_data_btn');
 
     // --- Data Storage ---
     let allSwimmersData = [];
@@ -143,67 +162,86 @@
     updateSwimmerBtn.addEventListener('click', handleUpdateSwimmer);
     cancelEditBtn.addEventListener('click', cancelEditMode);
     bulkSubmitBtn.addEventListener('click', handleBulkSubmit);
+    generateDataBtn.addEventListener('click', handleGenerateSampleData);
 
     // --- Functions ---
+
+    /**
+     * Toggles the UI between "Add" mode and "Edit" mode.
+     * @param {boolean} isEditing - True to switch to edit mode, false for add mode.
+     */
     function setEditMode(isEditing) {
       addButtonContainer.classList.toggle('hidden', isEditing);
       editButtonsContainer.classList.toggle('hidden', !isEditing);
       if (!isEditing) editingSwimmerId = null;
     }
 
+    /**
+     * Dynamically creates checkboxes and input fields for swimming events
+     * based on the number entered in the 'num_events' input.
+     */
     function generateEventCheckboxes() {
       eventsContainer.innerHTML = '';
       const numberOfEvents = parseInt(numEventsInput.value, 10);
-      if (numberOfEvents > 0) {
+
+      if (isNaN(numberOfEvents) || numberOfEvents <= 0) return;
+
+      const mainLabel = document.createElement('label');
+      mainLabel.textContent = 'Select Events & Enter Seed Times';
+      mainLabel.className = 'block text-sm font-medium text-gray-700';
+      eventsContainer.appendChild(mainLabel);
+
+      for (let i = 1; i <= numberOfEvents; i++) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex items-center space-x-4';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `event_${i}`;
+        checkbox.name = 'events';
+        checkbox.value = `Event ${i}`;
+        checkbox.className = 'h-4 w-4 text-blue-600 border-gray-300 rounded';
+
         const label = document.createElement('label');
-        label.textContent = 'Select Events & Enter Seed Times';
-        label.className = 'block text-sm font-medium text-gray-700';
-        eventsContainer.appendChild(label);
-        for (let i = 1; i <= numberOfEvents; i++) {
-          const wrapper = document.createElement('div');
-          wrapper.className = 'flex items-center space-x-4';
+        label.htmlFor = `event_${i}`;
+        label.textContent = `Event ${i}`;
+        label.className = 'ml-2 text-sm text-gray-700 w-20 flex-shrink-0';
 
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.id = `event_${i}`;
-          checkbox.name = 'events';
-          checkbox.value = `Event ${i}`;
-          checkbox.className = 'h-4 w-4 text-blue-600 border-gray-300 rounded';
+        const seedTimeInput = document.createElement('input');
+        seedTimeInput.type = 'text';
+        seedTimeInput.id = `seed_time_${i}`;
+        seedTimeInput.placeholder = 'e.g., 01:23.45';
+        seedTimeInput.className = 'hidden w-full px-3 py-1 text-sm border border-gray-300 rounded-md';
 
-          const label = document.createElement('label');
-          label.htmlFor = `event_${i}`;
-          label.textContent = `Event ${i}`;
-          label.className = 'ml-2 text-sm text-gray-700 w-20 flex-shrink-0';
+        checkbox.addEventListener('change', e => {
+          seedTimeInput.classList.toggle('hidden', !e.target.checked);
+          if (!e.target.checked) seedTimeInput.value = '';
+        });
 
-          const seedTimeInput = document.createElement('input');
-          seedTimeInput.type = 'text';
-          seedTimeInput.id = `seed_time_${i}`;
-          seedTimeInput.placeholder = 'e.g., 01:23.45';
-          seedTimeInput.className = 'hidden w-full px-3 py-1 text-sm border border-gray-300 rounded-md';
+        seedTimeInput.addEventListener('input', e => {
+          e.target.value = e.target.value.replace(/[^0-9:]/g, '');
+        });
 
-          checkbox.addEventListener('change', e => {
-            seedTimeInput.classList.toggle('hidden', !e.target.checked);
-            if (!e.target.checked) seedTimeInput.value = '';
-          });
-
-          seedTimeInput.addEventListener('input', e => {
-            e.target.value = e.target.value.replace(/-/g, ':');
-          });
-
-          wrapper.appendChild(checkbox);
-          wrapper.appendChild(label);
-          wrapper.appendChild(seedTimeInput);
-          eventsContainer.appendChild(wrapper);
-        }
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(label);
+        wrapper.appendChild(seedTimeInput);
+        eventsContainer.appendChild(wrapper);
       }
     }
 
+    /**
+     * Resets the input form fields to their default state.
+     */
     function resetPartialForm() {
       swimmerForm.reset();
       eventsContainer.innerHTML = '';
       document.getElementById('full_name').focus();
     }
 
+    /**
+     * Gathers all the data from the form fields and returns it as an object.
+     * @returns {object|null} The swimmer data object or null if validation fails.
+     */
     function getSwimmerDataFromForm() {
       if (!swimmerForm.checkValidity()) {
         swimmerForm.reportValidity();
@@ -214,7 +252,7 @@
       document.querySelectorAll('input[name="events"]:checked').forEach(cb => {
         const num = cb.id.split('_')[1];
         const time = document.getElementById(`seed_time_${num}`).value;
-        selectedEvents.push({ name: cb.value, time });
+        selectedEvents.push({ name: cb.value, time: time || 'NT' });
       });
       return {
         fullName: formData.get('full_name'),
@@ -225,6 +263,9 @@
       };
     }
 
+    /**
+     * Handles the "Add Swimmer" button click.
+     */
     function handleAddSwimmer() {
       const data = getSwimmerDataFromForm();
       if (!data) return;
@@ -233,6 +274,9 @@
       resetPartialForm();
     }
 
+    /**
+     * Renders the list of added swimmers into a table.
+     */
     function renderSwimmersList() {
       swimmersListContainer.innerHTML = '';
       if (allSwimmersData.length === 0) {
@@ -249,24 +293,26 @@
       table.innerHTML = `
         <thead class="bg-gray-50">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Name & Club</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Details</th>
-            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Events & Times</th>
-            <th class="px-4 py-3"></th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name & Club</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Events & Times</th>
+            <th class="relative px-4 py-3"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
       `;
       const tbody = document.createElement('tbody');
+      tbody.className = "bg-white divide-y divide-gray-200";
+
       allSwimmersData.forEach(swimmer => {
         const tr = document.createElement('tr');
         const eventsHtml = swimmer.events.length
           ? swimmer.events.map(e => `${e.name} (${e.time || 'N/A'})`).join('<br>')
           : 'No events';
         tr.innerHTML = `
-          <td class="px-4 py-4">${swimmer.fullName}<br><span class="text-sm text-gray-500">${swimmer.schoolClub}</span></td>
-          <td class="px-4 py-4">Age: ${swimmer.age}<br>Gender: ${swimmer.gender}</td>
-          <td class="px-4 py-4 text-sm text-gray-500">${eventsHtml}</td>
-          <td class="px-4 py-4 text-right space-x-3">
+          <td class="px-4 py-4 whitespace-nowrap"><div class="text-sm font-medium text-gray-900">${swimmer.fullName}</div><div class="text-sm text-gray-500">${swimmer.schoolClub}</div></td>
+          <td class="px-4 py-4 whitespace-nowrap"><div class="text-sm text-gray-900">Age: ${swimmer.age}</div><div class="text-sm text-gray-500">${swimmer.gender}</div></td>
+          <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">${eventsHtml}</td>
+          <td class="px-4 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
             <button onclick="handleEditSwimmer(${swimmer.id})" class="text-indigo-600 hover:text-indigo-900">Edit</button>
             <button onclick="removeSwimmer(${swimmer.id})" class="text-red-600 hover:text-red-900">Remove</button>
           </td>
@@ -279,17 +325,27 @@
       bulkSubmitBtn.classList.remove('hidden');
     }
 
+    /**
+     * Populates the form with a swimmer's data for editing.
+     * @param {number} id - The unique ID of the swimmer to edit.
+     */
     window.handleEditSwimmer = function (id) {
       const swimmer = allSwimmersData.find(s => s.id === id);
       if (!swimmer) return;
+      
       editingSwimmerId = id;
       document.getElementById('full_name').value = swimmer.fullName;
       document.getElementById('age').value = swimmer.age;
       document.getElementById('school_club').value = swimmer.schoolClub;
       document.querySelector(`input[name="gender"][value="${swimmer.gender}"]`).checked = true;
 
-      numEventsInput.value = swimmer.events.length;
+      const eventCount = Math.max(
+        swimmer.events.length, 
+        ...swimmer.events.map(e => parseInt(e.name.split(' ')[1]))
+      );
+      numEventsInput.value = isNaN(eventCount) ? 0 : eventCount;
       generateEventCheckboxes();
+
       swimmer.events.forEach(event => {
         const cb = document.querySelector(`input[value="${event.name}"]`);
         if (cb) {
@@ -305,58 +361,133 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    /**
+     * Handles the "Update Swimmer" button click.
+     */
     function handleUpdateSwimmer() {
       const data = getSwimmerDataFromForm();
       if (!data || editingSwimmerId === null) return;
       const idx = allSwimmersData.findIndex(s => s.id === editingSwimmerId);
-      allSwimmersData[idx] = { id: editingSwimmerId, ...data };
+      if (idx > -1) {
+        allSwimmersData[idx] = { id: editingSwimmerId, ...data };
+      }
       renderSwimmersList();
       resetPartialForm();
       setEditMode(false);
     }
 
+    /**
+     * Cancels the edit mode and resets the form.
+     */
     function cancelEditMode() {
       resetPartialForm();
       setEditMode(false);
     }
 
+    /**
+     * Removes a swimmer from the local array.
+     * @param {number} id - The unique ID of the swimmer to remove.
+     */
     window.removeSwimmer = function (id) {
       if (editingSwimmerId === id) cancelEditMode();
       allSwimmersData = allSwimmersData.filter(s => s.id !== id);
       renderSwimmersList();
     };
 
+    /**
+     * Generates 30 sample swimmer records.
+     */
+    function handleGenerateSampleData() {
+        const sampleNames = ["Alex Johnson", "Bella Smith", "Charlie Brown", "Diana Prince", "Ethan Hunt", "Fiona Glenanne", "George Kirk", "Hannah Montana", "Ian Malcolm", "Jane Doe", "Kyle Reese", "Lara Croft", "Max Rockatansky", "Nina Williams", "Oscar Goldman", "Penny Parker", "Quinn Fabray", "Rachel Green", "Steve Rogers", "Tony Stark", "Uma Thurman", "Vito Corleone", "Walter White", "Xena Warrior", "Yoda", "Zoe Washburne", "John Wick", "Peter Pan", "Clark Kent", "Bruce Wayne"];
+        const sampleClubs = ["Dolphins Swim Team", "Aqua Racers", "Sea Dragons", "Wave Runners", "Blue Marlins"];
+        
+        const generatedSwimmers = [];
+        for (let i = 0; i < 30; i++) {
+            const events = [];
+            for (let j = 1; j <= 5; j++) {
+                const minutes = Math.floor(Math.random() * 2) + 1;
+                const seconds = Math.floor(Math.random() * 60);
+                const milliseconds = Math.floor(Math.random() * 100);
+                const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(2, '0')}`;
+                events.push({ name: `Event ${j}`, time: formattedTime });
+            }
+
+            generatedSwimmers.push({
+                id: Date.now() + i,
+                fullName: sampleNames[i % sampleNames.length],
+                gender: Math.random() > 0.5 ? 'Male' : 'Female',
+                age: Math.floor(Math.random() * 10) + 8,
+                schoolClub: sampleClubs[i % sampleClubs.length],
+                events: events
+            });
+        }
+        
+        allSwimmersData = allSwimmersData.concat(generatedSwimmers);
+        renderSwimmersList();
+        showMessage(`🎉 Generated and added 30 sample swimmers!`, 'success');
+    }
+
+    /**
+     * Handles the "Bulk Submit" button click, saving data to Firestore.
+     */
     async function handleBulkSubmit() {
       if (allSwimmersData.length === 0) return;
+      if (!db) {
+          showMessage("Firebase is not configured correctly. Cannot submit.", "error");
+          return;
+      }
+      
+      bulkSubmitBtn.disabled = true;
+      bulkSubmitBtn.textContent = 'Submitting...';
+
       try {
-        for (let swimmer of allSwimmersData) {
-          await addDoc(collection(db, "swimmers"), swimmer);
-        }
-        showMessage(`✅ Submitted ${allSwimmersData.length} swimmer(s) to Firebase!`);
+        // UPDATED: Changed the collection path to 'swimmers'
+        const swimmersCollection = collection(db, "swimmers");
+        // Use a batch write for more efficient bulk operations
+        const batch = writeBatch(db);
+        allSwimmersData.forEach(swimmer => {
+            const { id, ...firebaseData } = swimmer;
+            const newSwimmerRef = doc(swimmersCollection); // Automatically generate a new doc ID
+            batch.set(newSwimmerRef, firebaseData);
+        });
+
+        await batch.commit(); // Commit the batch
+        
+        showMessage(`✅ Submitted ${allSwimmersData.length} swimmer(s) to Firebase!`, 'success');
         allSwimmersData = [];
         editingSwimmerId = null;
         renderSwimmersList();
         resetPartialForm();
         setEditMode(false);
       } catch (err) {
-        console.error(err);
-        alert("Error saving swimmers to Firebase.");
+        console.error("Error saving swimmers to Firebase: ", err);
+        showMessage(`❌ Error: ${err.message}`, 'error');
+      } finally {
+        bulkSubmitBtn.disabled = false;
+        bulkSubmitBtn.textContent = 'Bulk Submit All Swimmers';
       }
     }
 
-    function showMessage(text) {
-      const box = document.createElement('div');
-      box.textContent = text;
-      box.style.position = 'fixed';
-      box.style.top = '20px';
-      box.style.left = '50%';
-      box.style.transform = 'translateX(-50%)';
-      box.style.backgroundColor = '#28a745';
-      box.style.color = '#fff';
-      box.style.padding = '12px 20px';
-      box.style.borderRadius = '8px';
-      document.body.appendChild(box);
-      setTimeout(() => box.remove(), 3000);
+    /**
+     * Displays a temporary message box at the top of the screen.
+     * @param {string} text - The message to display.
+     * @param {'success'|'error'} type - The type of message, for styling.
+     */
+    function showMessage(text, type = 'success') {
+        const box = document.createElement('div');
+        box.textContent = text;
+        const baseStyles = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; font-size: 1rem;';
+        const typeStyles = type === 'success' 
+            ? 'background-color: #28a745;' 
+            : 'background-color: #dc3545;';
+        box.style.cssText = baseStyles + typeStyles;
+        
+        document.body.appendChild(box);
+        setTimeout(() => {
+            box.style.transition = 'opacity 0.5s ease';
+            box.style.opacity = '0';
+            setTimeout(() => box.remove(), 500);
+        }, 4000);
     }
   </script>
 </body>
