@@ -181,28 +181,35 @@
             generateTimesButton.disabled = true;
 
             const updatePromises = [];
-            const updateButtons = document.querySelectorAll('.update-time-btn');
 
-            updateButtons.forEach(button => {
-                const swimmerId = button.dataset.swimmerId;
-                const eventName = button.dataset.eventName;
-                const swimmerData = allSwimmers.find(s => s.id === swimmerId);
-                const eventData = swimmerData.events.find(e => e.name === eventName);
-                const seedTime = eventData.time;
+            allSwimmers.forEach(swimmer => {
+                let needsUpdate = false;
+                const updatedEvents = swimmer.events.map(event => {
+                    if (!event.actualTime) {
+                        needsUpdate = true;
+                        const seedSeconds = timeToSeconds(event.time);
+                        const actualSeconds = seedSeconds + (Math.random() * 5);
+                        const newTime = secondsToTime(actualSeconds);
+                        return { ...event, actualTime: newTime };
+                    }
+                    return event;
+                });
 
-                const seedSeconds = timeToSeconds(seedTime);
-                // Generate a random time that's slightly slower than the seed time
-                const actualSeconds = seedSeconds + (Math.random() * 5); 
-                const newTime = secondsToTime(actualSeconds);
-
-                // We don't need the button element here for the update, just for visual feedback which we handle globally
-                updatePromises.push(updateSwimmerTime(swimmerId, eventName, newTime, null));
+                if (needsUpdate) {
+                    const swimmerRef = doc(db, "swimmers", swimmer.id);
+                    updatePromises.push(updateDoc(swimmerRef, { events: updatedEvents }));
+                    // Also update the local cache immediately
+                    swimmer.events = updatedEvents;
+                }
             });
 
-            await Promise.all(updatePromises);
-
-            // Re-render the entire list to show the changes
-            renderSwimmers();
+            if (updatePromises.length === 0) {
+                alert("All swimmers already have actual times recorded.");
+            } else {
+                await Promise.all(updatePromises);
+                // Re-render the entire list to show all the changes
+                renderSwimmers();
+            }
 
             generateTimesButton.textContent = 'Generate Missing Times';
             generateTimesButton.disabled = false;
