@@ -4,17 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Registration Form</title>
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <!-- SheetJS for Excel Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     body { font-family: 'Inter', sans-serif; }
-    /* Style for the edit modal */
+    /* Style for the modals */
     .modal-backdrop {
         position: fixed;
         top: 0;
@@ -26,6 +23,7 @@
         justify-content: center;
         align-items: center;
         z-index: 1000;
+        transition: opacity 0.2s ease-in-out;
     }
   </style>
 </head>
@@ -134,7 +132,7 @@
     </button>
   </div>
 
-  <!-- NEW: Firebase Data Viewer and Filter Section -->
+  <!-- Firebase Data Viewer and Filter Section -->
   <div class="w-full max-w-4xl p-8 mt-10 bg-white rounded-xl shadow-lg m-4">
       <h2 class="text-2xl font-bold text-gray-800 text-center">Registered Swimmers</h2>
       
@@ -145,7 +143,7 @@
           <input type="number" id="filter_age" placeholder="Filter by age..." class="px-4 py-2 border border-gray-300 rounded-md">
            <button type="button" id="download_excel_btn" class="w-full md:w-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
             Download Firebase Data (Excel)
-          </button>
+           </button>
       </div>
 
       <!-- Firebase Data Display -->
@@ -155,7 +153,7 @@
       </div>
   </div>
 
-  <!-- NEW: Edit Modal -->
+  <!-- Edit Modal -->
   <div id="edit_modal" class="modal-backdrop hidden">
       <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-lg">
           <h3 class="text-xl font-bold mb-4">Edit Swimmer</h3>
@@ -165,7 +163,7 @@
                   <label for="edit_full_name" class="block text-sm font-medium text-gray-700">Full Name</label>
                   <input type="text" id="edit_full_name" required class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md">
               </div>
-               <div>
+              <div>
                   <label class="block text-sm font-medium text-gray-700">Gender</label>
                   <div class="mt-2 flex space-x-6">
                       <div class="flex items-center">
@@ -200,14 +198,26 @@
       </div>
   </div>
 
+  <!-- NEW: Confirmation Modal for Deletion -->
+  <div id="confirmation_modal" class="modal-backdrop hidden">
+      <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+          <h3 class="text-xl font-bold mb-4 text-gray-800">Are you sure?</h3>
+          <p id="confirmation_message" class="text-gray-600 mb-6">This action cannot be undone.</p>
+          <div class="flex justify-center space-x-4">
+              <button id="cancel_delete_btn" class="px-6 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+              <button id="confirm_delete_btn" class="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete</button>
+          </div>
+      </div>
+  </div>
+
 
   <!-- Firebase + App Logic -->
   <script type="module">
-    // Updated Firebase imports to a more recent version
+    // Firebase imports
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, collection, doc, writeBatch, onSnapshot, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // Your web app's Firebase configuration
+    // Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyCZt6KtFQmU1U8ae7dwa3F4MMtVEY_2AiY",
       authDomain: "swimmingcompetition-91229.firebaseapp.com",
@@ -217,14 +227,14 @@
       appId: "1:1040379968158:web:07d232b63116790053598f"
     };
 
-    // Init Firebase
+    // Initialize Firebase
     let app;
     let db;
     try {
         app = initializeApp(firebaseConfig);
         db = getFirestore(app);
     } catch (e) {
-        console.error("Firebase initialization failed. Please check your firebaseConfig.", e);
+        console.error("Firebase initialization failed.", e);
         showMessage("Firebase config is invalid. App cannot save data.", "error");
     }
     
@@ -245,13 +255,11 @@
     const genderFemaleRadio = document.getElementById('gender_female');
     const ageInput = document.getElementById('age');
     const ageSeparatorInput = document.getElementById('age_separator');
-    // New DOM refs for filter section
     const firebaseSwimmersContainer = document.getElementById('firebase_swimmers_container');
     const searchBox = document.getElementById('search_box');
     const filterSchool = document.getElementById('filter_school');
     const filterAge = document.getElementById('filter_age');
     const downloadExcelBtn = document.getElementById('download_excel_btn');
-    // New DOM refs for edit modal
     const editModal = document.getElementById('edit_modal');
     const editForm = document.getElementById('edit_form');
     const cancelUpdateBtn = document.getElementById('cancel_update_btn');
@@ -259,35 +267,55 @@
     const editGenderMaleRadio = document.getElementById('edit_gender_male');
     const editGenderFemaleRadio = document.getElementById('edit_gender_female');
     const editAgeInput = document.getElementById('edit_age');
+    // NEW: Confirmation Modal DOM refs
+    const confirmationModal = document.getElementById('confirmation_modal');
+    const confirmationMessage = document.getElementById('confirmation_message');
+    const confirmDeleteBtn = document.getElementById('confirm_delete_btn');
+    const cancelDeleteBtn = document.getElementById('cancel_delete_btn');
 
 
-    // --- Data Storage ---
-    let allSwimmersData = []; // For local list before submission
-    let firebaseSwimmers = []; // To hold the live data from Firebase
+    // --- Data Storage & State ---
+    let allSwimmersData = []; // Local list before submission
+    let firebaseSwimmers = []; // Live data from Firebase
     let editingSwimmerId = null;
+    let confirmCallback = null; // Stores the function to run on delete confirmation
+
 
     // --- Event Listeners ---
-    numEventsInput.addEventListener('input', generateEventCheckboxes);
     addSwimmerBtn.addEventListener('click', handleAddSwimmer);
     updateSwimmerBtn.addEventListener('click', handleUpdateSwimmer);
     cancelEditBtn.addEventListener('click', cancelEditMode);
     bulkSubmitBtn.addEventListener('click', handleBulkSubmit);
     generateDataBtn.addEventListener('click', handleGenerateSampleData);
+    // Form input listeners
+    numEventsInput.addEventListener('input', generateEventCheckboxes);
     genderMaleRadio.addEventListener('change', generateEventCheckboxes);
     genderFemaleRadio.addEventListener('change', generateEventCheckboxes);
     ageInput.addEventListener('input', generateEventCheckboxes);
     ageSeparatorInput.addEventListener('input', generateEventCheckboxes);
-    // New event listeners for filters
-    searchBox.addEventListener('input', () => renderFirebaseSwimmers());
-    filterSchool.addEventListener('input', () => renderFirebaseSwimmers());
-    filterAge.addEventListener('input', () => renderFirebaseSwimmers());
+    // Filter listeners
+    searchBox.addEventListener('input', renderFirebaseSwimmers);
+    filterSchool.addEventListener('input', renderFirebaseSwimmers);
+    filterAge.addEventListener('input', renderFirebaseSwimmers);
     downloadExcelBtn.addEventListener('click', downloadFirebaseDataAsExcel);
-    // New event listeners for edit modal
+    // Edit Modal listeners
     cancelUpdateBtn.addEventListener('click', () => editModal.classList.add('hidden'));
     editForm.addEventListener('submit', handleUpdateFirebaseSwimmer);
     editGenderMaleRadio.addEventListener('change', populateEditModalEvents);
     editGenderFemaleRadio.addEventListener('change', populateEditModalEvents);
     editAgeInput.addEventListener('input', populateEditModalEvents);
+    // NEW: Confirmation Modal listeners
+    confirmDeleteBtn.addEventListener('click', () => {
+        if (typeof confirmCallback === 'function') {
+            confirmCallback();
+        }
+        confirmationModal.classList.add('hidden');
+        confirmCallback = null;
+    });
+    cancelDeleteBtn.addEventListener('click', () => {
+        confirmationModal.classList.add('hidden');
+        confirmCallback = null;
+    });
 
 
     // --- Functions ---
@@ -302,9 +330,7 @@
       const swimmerAge = parseInt(ageInput.value, 10);
       const ageSeparator = parseInt(ageSeparatorInput.value, 10);
 
-      if (isNaN(numberOfEvents) || numberOfEvents <= 0) {
-          return;
-      }
+      if (isNaN(numberOfEvents) || numberOfEvents <= 0) return;
       
       if (!selectedGender || isNaN(swimmerAge)) {
           const message = document.createElement('p');
@@ -322,7 +348,6 @@
       let eventCount = 0;
       for (let i = 1; i <= numberOfEvents; i++) {
         let shouldShow = true;
-
         if (selectedGender === 'Male' && i % 2 === 0) shouldShow = false;
         if (selectedGender === 'Female' && i % 2 !== 0) shouldShow = false;
 
@@ -333,41 +358,33 @@
                 if (i % 4 === 1 || i % 4 === 2) shouldShow = false;
             }
         }
-
         if (!shouldShow) continue;
-        
         eventCount++;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'flex items-center space-x-4';
-
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = `event_${i}`;
         checkbox.name = 'events';
         checkbox.value = `Event ${i}`;
         checkbox.className = 'h-4 w-4 text-blue-600 border-gray-300 rounded';
-
         const label = document.createElement('label');
         label.htmlFor = `event_${i}`;
         label.textContent = `Event ${i}`;
         label.className = 'ml-2 text-sm text-gray-700 w-20 flex-shrink-0';
-
         const seedTimeInput = document.createElement('input');
         seedTimeInput.type = 'text';
         seedTimeInput.id = `seed_time_${i}`;
         seedTimeInput.placeholder = 'e.g., 01:23.45';
         seedTimeInput.className = 'hidden w-full px-3 py-1 text-sm border border-gray-300 rounded-md';
-
         checkbox.addEventListener('change', e => {
           seedTimeInput.classList.toggle('hidden', !e.target.checked);
           if (!e.target.checked) seedTimeInput.value = '';
         });
-
         seedTimeInput.addEventListener('input', e => {
-          e.target.value = e.target.value.replace(/-/g, ':').replace(/[^0-9:]/g, '');
+          e.target.value = e.target.value.replace(/-/g, ':').replace(/[^0-9:.]/g, '');
         });
-
         wrapper.appendChild(checkbox);
         wrapper.appendChild(label);
         wrapper.appendChild(seedTimeInput);
@@ -382,9 +399,8 @@
       }
     }
 
-
     /**
-     * Resets the input form fields to their default state, retaining some values.
+     * Resets the main form fields.
      */
     function resetPartialForm() {
       document.getElementById('full_name').value = '';
@@ -396,7 +412,7 @@
     }
 
     /**
-     * Gathers all the data from the form fields and returns it as an object.
+     * Gathers data from the main form and returns it as an object.
      * @returns {object|null} The swimmer data object or null if validation fails.
      */
     function getSwimmerDataFromForm() {
@@ -421,7 +437,7 @@
     }
 
     /**
-     * Handles the "Add Swimmer" button click.
+     * Handles adding a swimmer to the local list.
      */
     function handleAddSwimmer() {
       const data = getSwimmerDataFromForm();
@@ -432,7 +448,7 @@
     }
     
     /**
-     * Renders the list of added swimmers into a table.
+     * Renders the local list of swimmers to be submitted.
      */
     function renderSwimmersList() {
       swimmersListContainer.innerHTML = '';
@@ -478,12 +494,11 @@
       });
       table.appendChild(tbody);
       swimmersListContainer.appendChild(table);
-
       bulkSubmitBtn.classList.remove('hidden');
     }
 
     /**
-     * Populates the form with a swimmer's data for editing.
+     * Populates the main form for editing a local swimmer.
      * @param {number} id - The unique ID of the swimmer to edit.
      */
     window.handleEditSwimmer = function (id) {
@@ -496,11 +511,9 @@
       document.getElementById('school_club').value = swimmer.schoolClub;
       document.querySelector(`input[name="gender"][value="${swimmer.gender}"]`).checked = true;
 
-      const eventCount = Math.max(
-        swimmer.events.length, 
-        ...swimmer.events.map(e => parseInt(e.name.split(' ')[1]))
-      );
-      numEventsInput.value = isNaN(eventCount) ? 0 : eventCount;
+      const eventNumbers = swimmer.events.map(e => parseInt(e.name.split(' ')[1])).filter(n => !isNaN(n));
+      const maxEventNum = eventNumbers.length > 0 ? Math.max(...eventNumbers) : 0;
+      numEventsInput.value = maxEventNum > 0 ? maxEventNum : '';
       generateEventCheckboxes();
 
       swimmer.events.forEach(event => {
@@ -513,13 +526,12 @@
           input.classList.remove('hidden');
         }
       });
-
       setEditMode(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     /**
-     * Handles the "Update Swimmer" button click.
+     * Handles updating a swimmer in the local list.
      */
     function handleUpdateSwimmer() {
       const data = getSwimmerDataFromForm();
@@ -534,7 +546,7 @@
     }
 
     /**
-     * Cancels the edit mode and resets the form.
+     * Cancels the edit mode on the main form.
      */
     function cancelEditMode() {
       resetPartialForm();
@@ -542,7 +554,19 @@
     }
 
     /**
-     * Removes a swimmer from the local array.
+     * Toggles the main form between "add" and "edit" modes.
+     * @param {boolean} isEditing - True to enter edit mode, false for add mode.
+     */
+    function setEditMode(isEditing) {
+        addButtonContainer.classList.toggle('hidden', isEditing);
+        editButtonsContainer.classList.toggle('hidden', !isEditing);
+        if (!isEditing) {
+            editingSwimmerId = null;
+        }
+    }
+
+    /**
+     * Removes a swimmer from the local list.
      * @param {number} id - The unique ID of the swimmer to remove.
      */
     window.removeSwimmer = function (id) {
@@ -552,7 +576,7 @@
     };
 
     /**
-     * Generates 30 sample swimmer records based on current filter criteria.
+     * Generates 30 sample swimmer records for demonstration.
      */
     function handleGenerateSampleData() {
         const sampleNames = ["Alex Johnson", "Bella Smith", "Charlie Brown", "Diana Prince", "Ethan Hunt", "Fiona Glenanne", "George Kirk", "Hannah Montana", "Ian Malcolm", "Jane Doe", "Kyle Reese", "Lara Croft", "Max Rockatansky", "Nina Williams", "Oscar Goldman", "Penny Parker", "Quinn Fabray", "Rachel Green", "Steve Rogers", "Tony Stark", "Uma Thurman", "Vito Corleone", "Walter White", "Xena Warrior", "Yoda", "Zoe Washburne", "John Wick", "Peter Pan", "Clark Kent", "Bruce Wayne"];
@@ -569,14 +593,11 @@
         for (let i = 0; i < 30; i++) {
             const swimmerGender = Math.random() > 0.5 ? 'Male' : 'Female';
             const swimmerAge = Math.floor(Math.random() * 12) + 6;
-
             const eligibleEvents = [];
             for (let eventNum = 1; eventNum <= maxEvents; eventNum++) {
                 let isEligible = true;
-
                 if (swimmerGender === 'Male' && eventNum % 2 === 0) isEligible = false;
                 if (swimmerGender === 'Female' && eventNum % 2 !== 0) isEligible = false;
-
                 if (isEligible) {
                     if (swimmerAge <= ageSeparator) {
                         if (eventNum % 4 === 3 || eventNum % 4 === 0) isEligible = false;
@@ -584,15 +605,11 @@
                         if (eventNum % 4 === 1 || eventNum % 4 === 2) isEligible = false;
                     }
                 }
-                
-                if (isEligible) {
-                    eligibleEvents.push(eventNum);
-                }
+                if (isEligible) eligibleEvents.push(eventNum);
             }
 
             const selectedEvents = [];
             const eventsToSelect = Math.min(eligibleEvents.length, 5);
-            
             const shuffledEligible = eligibleEvents.sort(() => 0.5 - Math.random());
             for(let k = 0; k < eventsToSelect; k++) {
                 const eventNum = shuffledEligible[k];
@@ -615,11 +632,11 @@
         
         allSwimmersData = allSwimmersData.concat(generatedSwimmers);
         renderSwimmersList();
-        showMessage(`🎉 Generated 30 sample swimmers based on current filters!`, 'success');
+        showMessage(`🎉 Generated 30 sample swimmers!`, 'success');
     }
 
     /**
-     * Handles the "Bulk Submit" button click, saving data to Firestore.
+     * Submits the local list of swimmers to Firestore.
      */
     async function handleBulkSubmit() {
       if (allSwimmersData.length === 0) return;
@@ -639,12 +656,9 @@
             const newSwimmerRef = doc(swimmersCollection);
             batch.set(newSwimmerRef, firebaseData);
         });
-
         await batch.commit();
-        
         showMessage(`✅ Submitted ${allSwimmersData.length} swimmer(s) to Firebase!`, 'success');
         allSwimmersData = [];
-        editingSwimmerId = null;
         renderSwimmersList();
         resetPartialForm();
         setEditMode(false);
@@ -660,7 +674,7 @@
     /**
      * Displays a temporary message box at the top of the screen.
      * @param {string} text - The message to display.
-     * @param {'success'|'error'} type - The type of message, for styling.
+     * @param {'success'|'error'} type - The type of message for styling.
      */
     function showMessage(text, type = 'success') {
         const box = document.createElement('div');
@@ -670,7 +684,6 @@
             ? 'background-color: #28a745;' 
             : 'background-color: #dc3545;';
         box.style.cssText = baseStyles + typeStyles;
-        
         document.body.appendChild(box);
         setTimeout(() => {
             box.style.transition = 'opacity 0.5s ease';
@@ -679,7 +692,7 @@
         }, 4000);
     }
 
-    // --- NEW Functions for Firebase Data Viewer ---
+    // --- Firebase Data Viewer & Modal Functions ---
 
     /**
      * Listens for real-time updates from the 'swimmers' collection in Firebase.
@@ -697,11 +710,10 @@
     }
 
     /**
-     * Renders the list of swimmers from Firebase, applying any active filters.
+     * Renders the list of swimmers from Firebase, applying active filters.
      */
     function renderFirebaseSwimmers() {
         firebaseSwimmersContainer.innerHTML = '';
-        
         const searchTerm = searchBox.value.toLowerCase();
         const schoolFilter = filterSchool.value.toLowerCase();
         const ageFilter = filterAge.value;
@@ -722,7 +734,6 @@
             const eventsHtml = swimmer.events && swimmer.events.length
                 ? swimmer.events.map(e => `${e.name} (${e.time || 'N/A'})`).join(', ')
                 : 'No events';
-
             const card = document.createElement('div');
             card.className = 'p-4 border rounded-lg bg-gray-50 grid grid-cols-1 md:grid-cols-4 gap-4 items-center';
             card.innerHTML = `
@@ -756,39 +767,33 @@
 
         if (target.classList.contains('edit-fb-btn')) {
             const swimmer = firebaseSwimmers.find(s => s.id === docId);
-            if (swimmer) {
-                openEditModal(swimmer);
-            }
+            if (swimmer) openEditModal(swimmer);
         }
 
         if (target.classList.contains('delete-fb-btn')) {
-            if (confirm('Are you sure you want to delete this swimmer?')) {
+            const swimmer = firebaseSwimmers.find(s => s.id === docId);
+            const message = `Are you sure you want to delete ${swimmer ? swimmer.fullName : 'this swimmer'}? This action cannot be undone.`;
+            showConfirmationModal(message, () => {
                 handleDeleteFirebaseSwimmer(docId);
-            }
+            });
         }
     });
 
     /**
-     * Opens and populates the edit modal with the swimmer's data.
+     * Opens and populates the edit modal with a swimmer's data.
      */
     function openEditModal(swimmer) {
         document.getElementById('edit_doc_id').value = swimmer.id;
         document.getElementById('edit_full_name').value = swimmer.fullName;
         document.getElementById('edit_age').value = swimmer.age;
         document.getElementById('edit_school_club').value = swimmer.schoolClub;
-        
-        if (swimmer.gender === 'Male') {
-            editGenderMaleRadio.checked = true;
-        } else {
-            editGenderFemaleRadio.checked = true;
-        }
-        
+        document.querySelector(`input[name="edit_gender"][value="${swimmer.gender}"]`).checked = true;
         populateEditModalEvents();
         editModal.classList.remove('hidden');
     }
 
     /**
-     * Populates the event checkboxes inside the edit modal based on the swimmer's info.
+     * Populates the event checkboxes inside the edit modal.
      */
     function populateEditModalEvents() {
         const docId = document.getElementById('edit_doc_id').value;
@@ -797,7 +802,6 @@
 
         const swimmerAge = parseInt(editAgeInput.value, 10);
         const selectedGender = document.querySelector('input[name="edit_gender"]:checked')?.value;
-        
         editEventsContainer.innerHTML = '';
         const ageSeparator = parseInt(ageSeparatorInput.value, 10);
         const maxEvents = parseInt(numEventsInput.value, 10) || 24;
@@ -806,7 +810,6 @@
             let isEligible = true;
             if (selectedGender === 'Male' && i % 2 === 0) isEligible = false;
             if (selectedGender === 'Female' && i % 2 !== 0) isEligible = false;
-            
             if (isEligible) {
                 if (swimmerAge <= ageSeparator) {
                     if (i % 4 === 3 || i % 4 === 0) isEligible = false;
@@ -817,7 +820,6 @@
             if (!isEligible) continue;
 
             const existingEvent = swimmer.events.find(e => e.name === `Event ${i}`);
-            
             const wrapper = document.createElement('div');
             wrapper.className = 'flex items-center space-x-4';
             const checkbox = document.createElement('input');
@@ -827,28 +829,23 @@
             checkbox.value = `Event ${i}`;
             checkbox.checked = !!existingEvent;
             checkbox.className = 'h-4 w-4 text-blue-600 border-gray-300 rounded';
-
             const label = document.createElement('label');
             label.htmlFor = `edit_event_${i}`;
             label.textContent = `Event ${i}`;
             label.className = 'ml-2 text-sm text-gray-700 w-20 flex-shrink-0';
-
             const seedTimeInput = document.createElement('input');
             seedTimeInput.type = 'text';
             seedTimeInput.id = `edit_seed_time_${i}`;
             seedTimeInput.value = existingEvent ? existingEvent.time : '';
             seedTimeInput.placeholder = 'e.g., 01:23.45';
             seedTimeInput.className = `w-full px-3 py-1 text-sm border border-gray-300 rounded-md ${!existingEvent ? 'hidden' : ''}`;
-            
             checkbox.addEventListener('change', e => {
               seedTimeInput.classList.toggle('hidden', !e.target.checked);
               if (!e.target.checked) seedTimeInput.value = '';
             });
-
             seedTimeInput.addEventListener('input', e => {
-              e.target.value = e.target.value.replace(/-/g, ':').replace(/[^0-9:]/g, '');
+              e.target.value = e.target.value.replace(/-/g, ':').replace(/[^0-9:.]/g, '');
             });
-
             wrapper.appendChild(checkbox);
             wrapper.appendChild(label);
             wrapper.appendChild(seedTimeInput);
@@ -857,11 +854,12 @@
     }
 
     /**
-     * Handles the submission of the edit form to update a swimmer in Firebase.
+     * Handles submitting the edit form to update a swimmer in Firebase.
      */
     async function handleUpdateFirebaseSwimmer(e) {
         e.preventDefault();
         const docId = document.getElementById('edit_doc_id').value;
+        if (!docId || !db) return;
         
         const updatedEvents = [];
         document.querySelectorAll('input[name="edit_events"]:checked').forEach(cb => {
@@ -878,8 +876,6 @@
             events: updatedEvents
         };
 
-        if (!docId || !db) return;
-
         const swimmerRef = doc(db, 'swimmers', docId);
         try {
             await updateDoc(swimmerRef, updatedData);
@@ -889,6 +885,17 @@
             console.error("Error updating document: ", error);
             showMessage('❌ Error updating swimmer.', 'error');
         }
+    }
+
+    /**
+     * Shows the custom confirmation modal.
+     * @param {string} message - The message to display in the modal.
+     * @param {function} callback - The function to execute if the user confirms.
+     */
+    function showConfirmationModal(message, callback) {
+        confirmationMessage.textContent = message;
+        confirmCallback = callback;
+        confirmationModal.classList.remove('hidden');
     }
 
     /**
@@ -907,14 +914,13 @@
     }
 
     /**
-     * Downloads the entire Firebase swimmer data as an Excel file.
+     * Downloads the Firebase swimmer data as an Excel file.
      */
     function downloadFirebaseDataAsExcel() {
         if (firebaseSwimmers.length === 0) {
             showMessage("No data to download.", "error");
             return;
         }
-
         const excelData = firebaseSwimmers.map(swimmer => ({
             "Full Name": swimmer.fullName,
             "Gender": swimmer.gender,
@@ -922,13 +928,11 @@
             "School / Club": swimmer.schoolClub,
             "Events": swimmer.events.map(e => `${e.name} (${e.time || 'NT'})`).join('\n')
         }));
-
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "All Swimmers");
         XLSX.writeFile(workbook, "firebase_swimmers_backup.xlsx");
     }
-
 
     // Initial call to load data from Firebase when the page loads
     listenForSwimmers();
