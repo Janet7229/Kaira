@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swimming Competition Events</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .lane-checkbox:checked + label {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-600">Swimming Competition Roster</h1>
+            <p class="text-lg text-gray-600 mt-2">Heats by Event</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8 max-w-5xl mx-auto">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                <!-- Inputs -->
+                <div class="flex justify-center items-center gap-2">
+                    <label for="start-lane" class="font-semibold text-gray-700">Start Lane:</label>
+                    <input type="number" id="start-lane" value="0" min="0" max="20" class="w-20 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <label for="last-lane" class="font-semibold text-gray-700">Last Lane:</label>
+                    <input type="number" id="last-lane" value="9" min="0" max="20" class="w-20 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col md:flex-row justify-center items-center gap-4">
+                     <button id="apply-filters" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-700 transition-colors w-full md:w-auto">Generate Heats</button>
+                     <button id="generate-times" class="bg-green-500 text-white font-bold py-3 px-6 rounded-md hover:bg-green-600 transition-colors w-full md:w-auto">Generate Missing Times</button>
+                </div>
+            </div>
+             <!-- Lane Selection -->
+            <div class="mt-6">
+                <h3 class="font-semibold text-center text-gray-700 mb-3">Select Usable Lanes</h3>
+                <div id="lane-selector" class="flex flex-wrap justify-center gap-2">
+                    <!-- Checkboxes will be inserted here by JS -->
+                </div>
+            </div>
+        </div>
+
+        <main id="events-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Event containers will be dynamically inserted here -->
+            <div id="loading-indicator" class="col-span-full text-center p-8">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-500"></div>
+                <p class="mt-4 text-lg font-semibold">Loading Swimmer Data...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZt6KtFQmU1U8ae7dwa3F4MMtVEY_2AiY",
+            authDomain: "swimmingcompetition-91229.firebaseapp.com",
+            projectId: "swimmingcompetition-91229",
+            storageBucket: "swimmingcompetition-91229.firebasestorage.app",
+            messagingSenderId: "1040379968158",
+            appId: "1:1040379968158:web:07d232b63116790053598f"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const eventsContainer = document.getElementById('events-container');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const startLaneInput = document.getElementById('start-lane');
+        const lastLaneInput = document.getElementById('last-lane');
+        const applyFilterButton = document.getElementById('apply-filters');
+        const generateTimesButton = document.getElementById('generate-times');
+        const laneSelector = document.getElementById('lane-selector');
+        let allSwimmers = []; // Cache swimmer data
+
+        // --- Helper Functions ---
+        const timeToSeconds = (timeStr) => {
+            if (!timeStr || !timeStr.includes(':')) return 9999; // Handle missing/malformed times
+            const parts = timeStr.split(':').map(Number);
+            return (parts[0] * 60) + parts[1];
+        };
+
+        const secondsToTime = (seconds) => {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = (seconds % 60).toFixed(2);
+            return `${minutes}:${remainingSeconds.padStart(5, '0')}`;
+        };
+
+        // --- UI Initialization ---
+        function initializeLaneSelector() {
+            laneSelector.innerHTML = ''; // Clear existing lanes
+            const startLane = parseInt(startLaneInput.value, 10);
+            const lastLane = parseInt(lastLaneInput.value, 10);
+
+            if (isNaN(startLane) || isNaN(lastLane) || startLane > lastLane) {
+                return; // Don't generate if input is invalid
+            }
+
+            for (let i = startLane; i <= lastLane; i++) {
+                // Default to all lanes being checked
+                const isChecked = true; 
+                laneSelector.innerHTML += `
+                    <div class="flex items-center">
+                        <input type="checkbox" id="lane-${i}" value="${i}" class="hidden lane-checkbox" ${isChecked ? 'checked' : ''}>
+                        <label for="lane-${i}" class="cursor-pointer border-2 border-gray-300 rounded-md w-10 h-10 flex items-center justify-center font-bold transition-colors">${i}</label>
+                    </div>
+                `;
+            }
+        }
+
+        // --- Firestore Update Logic ---
+        async function updateSwimmerTime(swimmerId, eventName, newTime, buttonElement) {
+            if (!swimmerId || !eventName || !newTime) {
+                alert("Missing information to update time.");
+                return;
+            }
+            if (buttonElement) {
+                buttonElement.textContent = 'Updating...';
+                buttonElement.disabled = true;
+            }
+
+            try {
+                const swimmerRef = doc(db, "swimmers", swimmerId);
+                const swimmerSnap = await getDoc(swimmerRef);
+
+                if (swimmerSnap.exists()) {
+                    const swimmerData = swimmerSnap.data();
+                    const updatedEvents = swimmerData.events.map(event => {
+                        if (event.name === eventName) {
+                            return { ...event, actualTime: newTime };
+                        }
+                        return event;
+                    });
+
+                    await updateDoc(swimmerRef, { events: updatedEvents });
+
+                    // Update the local cache to prevent re-render issues
+                    const swimmerIndex = allSwimmers.findIndex(s => s.id === swimmerId);
+                    if (swimmerIndex !== -1) {
+                        const eventIndex = allSwimmers[swimmerIndex].events.findIndex(e => e.name === eventName);
+                        if (eventIndex !== -1) {
+                            allSwimmers[swimmerIndex].events[eventIndex].actualTime = newTime;
+                        }
+                    }
+                    
+                    if (buttonElement) {
+                        const parentDiv = buttonElement.parentElement;
+                        if (parentDiv) {
+                            parentDiv.innerHTML = `<p class="w-full text-right font-semibold text-green-600 cursor-pointer edit-time-text" data-swimmer-id="${swimmerId}" data-event-name="${eventName}">${newTime}</p>`;
+                        }
+                    }
+
+                } else {
+                    console.error("No such swimmer document!");
+                    if (buttonElement) buttonElement.textContent = 'Error';
+                }
+            } catch (error) {
+                console.error("Error updating document: ", error);
+                if (buttonElement) buttonElement.textContent = 'Error';
+            }
+        }
+        
+        // --- Bulk Time Generation ---
+        async function generateAllTimes() {
+            generateTimesButton.textContent = 'Generating...';
+            generateTimesButton.disabled = true;
+
+            const updatePromises = [];
+            const updateButtons = document.querySelectorAll('.update-time-btn');
+
+            updateButtons.forEach(button => {
+                const swimmerId = button.dataset.swimmerId;
+                const eventName = button.dataset.eventName;
+                const swimmerData = allSwimmers.find(s => s.id === swimmerId);
+                const eventData = swimmerData.events.find(e => e.name === eventName);
+                const seedTime = eventData.time;
+
+                const seedSeconds = timeToSeconds(seedTime);
+                // Generate a random time that's slightly slower than the seed time
+                const actualSeconds = seedSeconds + (Math.random() * 5); 
+                const newTime = secondsToTime(actualSeconds);
+
+                // We don't need the button element here for the update, just for visual feedback which we handle globally
+                updatePromises.push(updateSwimmerTime(swimmerId, eventName, newTime, null));
+            });
+
+            await Promise.all(updatePromises);
+
+            // Re-render the entire list to show the changes
+            renderSwimmers();
+
+            generateTimesButton.textContent = 'Generate Missing Times';
+            generateTimesButton.disabled = false;
+        }
+
+
+        // --- Core Rendering Logic ---
+        function renderSwimmers() {
+            const startLane = parseInt(startLaneInput.value, 10);
+            const lastLane = parseInt(lastLaneInput.value, 10);
+            
+            const availableLanes = Array.from(document.querySelectorAll('.lane-checkbox:checked'))
+                .map(cb => parseInt(cb.value))
+                .sort((a, b) => a - b);
+            
+            if (isNaN(startLane) || isNaN(lastLane)) {
+                alert("Please enter a valid lane range.");
+                return;
+            }
+            if (availableLanes.length === 0) {
+                alert("Please select at least one usable lane.");
+                return;
+            }
+
+            const seedingOrder = [];
+            if (availableLanes.length > 0) {
+                const midIndex = Math.floor((availableLanes.length - 1) / 2);
+                seedingOrder.push(availableLanes[midIndex]);
+                let left = midIndex - 1;
+                let right = midIndex + 1;
+                while (left >= 0 || right < availableLanes.length) {
+                    if (right < availableLanes.length) seedingOrder.push(availableLanes[right++]);
+                    if (left >= 0) seedingOrder.push(availableLanes[left--]);
+                }
+            }
+
+            eventsContainer.innerHTML = '';
+            const eventsMap = new Map();
+
+            // Group swimmers by event name only
+            allSwimmers.forEach(swimmer => {
+                if (swimmer.events && Array.isArray(swimmer.events)) {
+                    swimmer.events.forEach(event => {
+                        const eventName = event.name;
+                        if (!eventsMap.has(eventName)) {
+                            eventsMap.set(eventName, []);
+                        }
+                        eventsMap.get(eventName).push({ ...swimmer, time: event.time, docId: swimmer.id, eventName: event.name });
+                    });
+                }
+            });
+
+            if (eventsMap.size === 0) {
+                eventsContainer.innerHTML = '<p class="text-center col-span-full text-gray-500">No events found.</p>';
+                return;
+            }
+
+            const createCardWithHeats = (title, swimmers, color) => {
+                if (swimmers.length === 0) return;
+
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow duration-300 flex flex-col';
+                
+                swimmers.sort((a, b) => timeToSeconds(b.time) - timeToSeconds(a.time));
+
+                let heatsHtml = '';
+                const lanesPerHeat = seedingOrder.length;
+                const totalSwimmers = swimmers.length;
+                const numHeats = Math.ceil(totalSwimmers / lanesPerHeat);
+
+                const heatSizes = [];
+                if (numHeats <= 1) {
+                    if(totalSwimmers > 0) heatSizes.push(totalSwimmers);
+                } else {
+                    const swimmersInFastestHeats = (numHeats - 2) * lanesPerHeat;
+                    const swimmersForFirstTwo = totalSwimmers - swimmersInFastestHeats;
+                    const sizeHeat1 = Math.floor(swimmersForFirstTwo / 2);
+                    const sizeHeat2 = Math.ceil(swimmersForFirstTwo / 2);
+                    if (sizeHeat1 > 0) heatSizes.push(sizeHeat1);
+                    if (sizeHeat2 > 0) heatSizes.push(sizeHeat2);
+                    for (let i = 0; i < numHeats - 2; i++) heatSizes.push(lanesPerHeat);
+                }
+                
+                let swimmersProcessed = 0;
+                for (let i = 0; i < heatSizes.length; i++) {
+                    const heatSize = heatSizes[i];
+                    const heatSwimmers = swimmers.slice(swimmersProcessed, swimmersProcessed + heatSize);
+                    swimmersProcessed += heatSize;
+                    
+                    if (heatSwimmers.length === 0) continue;
+
+                    heatSwimmers.sort((a, b) => timeToSeconds(a.time) - timeToSeconds(b.time));
+
+                    const laneAssignments = [];
+                    heatSwimmers.forEach((swimmer, swimmerIndex) => {
+                        const lane = seedingOrder[swimmerIndex];
+                        laneAssignments.push({ swimmer, lane });
+                    });
+
+                    let swimmersListHtml = '';
+                    for (let laneNum = startLane; laneNum <= lastLane; laneNum++) {
+                        const isUsable = availableLanes.includes(laneNum);
+                        const assignment = laneAssignments.find(a => a.lane === laneNum);
+
+                        if (isUsable) {
+                            if (assignment) {
+                                const swimmerId = assignment.swimmer.docId;
+                                const eventName = assignment.swimmer.eventName;
+                                
+                                const currentEventData = assignment.swimmer.events.find(e => e.name === eventName);
+                                const actualTime = currentEventData ? currentEventData.actualTime : null;
+
+                                let timeColumnHtml = '';
+                                if (actualTime) {
+                                    timeColumnHtml = `
+                                        <div class="col-span-4 flex justify-end">
+                                            <p class="w-full text-right font-semibold text-green-600 cursor-pointer edit-time-text" data-swimmer-id="${swimmerId}" data-event-name="${eventName}">${actualTime}</p>
+                                        </div>
+                                    `;
+                                } else {
+                                    timeColumnHtml = `
+                                        <div class="col-span-4 flex items-center gap-2 justify-end">
+                                            <input type="text" id="actual-time-${swimmerId}-${eventName.replace(/\s+/g, '-')}" class="w-24 p-1 border border-gray-300 rounded-md shadow-sm text-sm" placeholder="Actual Time">
+                                            <button class="update-time-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-2 rounded" data-swimmer-id="${swimmerId}" data-event-name="${eventName}">Update</button>
+                                        </div>
+                                    `;
+                                }
+
+                                swimmersListHtml += `
+                                    <li class="grid grid-cols-12 gap-x-2 md:gap-x-4 items-center py-2 border-b border-gray-200 last:border-b-0">
+                                        <span class="col-span-1 font-bold text-gray-500">Lane ${laneNum}:</span>
+                                        <p class="col-span-3 font-semibold text-gray-800 truncate" title="${assignment.swimmer.fullName}">${assignment.swimmer.fullName}</p>
+                                        <p class="col-span-2 text-sm text-gray-500 truncate" title="${assignment.swimmer.schoolClub}">${assignment.swimmer.schoolClub}</p>
+                                        <p class="col-span-1 text-sm text-gray-500 text-center">${assignment.swimmer.age}</p>
+                                        <p class="col-span-1 font-mono text-sm text-right">${assignment.swimmer.time}</p>
+                                        ${timeColumnHtml}
+                                    </li>
+                                `;
+                            } else {
+                                swimmersListHtml += `
+                                    <li class="grid grid-cols-12 gap-x-2 md:gap-x-4 items-center py-3 border-b border-gray-200 last:border-b-0 text-gray-400" style="height: 42px;">
+                                        <span class="col-span-2 font-bold">Lane ${laneNum}:</span>
+                                        <span class="col-span-10">---</span>
+                                    </li>`;
+                            }
+                        } else {
+                             swimmersListHtml += `
+                                <li class="grid grid-cols-12 gap-x-2 md:gap-x-4 items-center py-3 border-b border-gray-200 last:border-b-0 bg-gray-50 text-gray-300" style="height: 42px;">
+                                    <span class="col-span-2 font-bold">Lane ${laneNum}:</span>
+                                    <span class="col-span-10">Not in Use</span>
+                                </li>`;
+                        }
+                    }
+
+                    heatsHtml += `
+                        <div class="mt-4">
+                            <h3 class="font-semibold text-gray-600 bg-gray-100 p-2 rounded-t-md">Heat ${i + 1}</h3>
+                            <ul class="divide-y divide-gray-200">${swimmersListHtml}</ul>
+                        </div>`;
+                }
+
+                card.innerHTML = `
+                    <h2 class="text-xl font-bold text-gray-700 border-b-2 border-${color}-500 pb-2 mb-2">${title}</h2>
+                    <div class="flex-grow">${heatsHtml}</div>`;
+                eventsContainer.appendChild(card);
+            };
+
+            // Sort event keys numerically before creating cards
+            const sortedEventKeys = Array.from(eventsMap.keys()).sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)?.[0] || 0);
+                const numB = parseInt(b.match(/\d+/)?.[0] || 0);
+                return numA - numB;
+            });
+
+            for (const eventName of sortedEventKeys) {
+                const swimmers = eventsMap.get(eventName);
+                createCardWithHeats(eventName, swimmers, 'blue');
+            }
+        }
+
+        async function fetchAndDisplaySwimmers() {
+            loadingIndicator.style.display = 'flex';
+            try {
+                const querySnapshot = await getDocs(collection(db, "swimmers"));
+                querySnapshot.forEach((doc) => {
+                    allSwimmers.push({ ...doc.data(), id: doc.id });
+                });
+                renderSwimmers();
+            } catch (error) {
+                console.error("Error fetching swimmers: ", error);
+                eventsContainer.innerHTML = '<p class="text-center col-span-full text-red-500">Error loading data.</p>';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        // --- Event Listeners ---
+        applyFilterButton.addEventListener('click', renderSwimmers);
+        generateTimesButton.addEventListener('click', generateAllTimes);
+        startLaneInput.addEventListener('change', initializeLaneSelector);
+        lastLaneInput.addEventListener('change', initializeLaneSelector);
+        
+        // Event delegation for update and edit clicks
+        eventsContainer.addEventListener('click', (e) => {
+            // Handle Update Click
+            if (e.target && e.target.classList.contains('update-time-btn')) {
+                const button = e.target;
+                const swimmerId = button.dataset.swimmerId;
+                const eventName = button.dataset.eventName;
+                const inputId = `actual-time-${swimmerId}-${eventName.replace(/\s+/g, '-')}`;
+                const timeInput = document.getElementById(inputId);
+                updateSwimmerTime(swimmerId, eventName, timeInput.value, button);
+            }
+
+            // Handle Edit Click
+            if (e.target && e.target.classList.contains('edit-time-text')) {
+                const pElement = e.target;
+                const swimmerId = pElement.dataset.swimmerId;
+                const eventName = pElement.dataset.eventName;
+                const currentTime = pElement.textContent;
+                const parentDiv = pElement.parentElement;
+
+                if (parentDiv) {
+                    parentDiv.innerHTML = `
+                        <input type="text" id="actual-time-${swimmerId}-${eventName.replace(/\s+/g, '-')}" value="${currentTime}" class="w-24 p-1 border border-gray-300 rounded-md shadow-sm text-sm" placeholder="Actual Time">
+                        <button class="update-time-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-2 rounded" data-swimmer-id="${swimmerId}" data-event-name="${eventName}">Update</button>
+                    `;
+                    parentDiv.classList.remove('justify-end');
+                    parentDiv.classList.add('flex', 'items-center', 'gap-2', 'justify-end');
+                }
+            }
+        });
+
+        // --- Page Load ---
+        window.onload = () => {
+            initializeLaneSelector();
+            fetchAndDisplaySwimmers();
+        };
+    </script>
+</body>
+</html>
