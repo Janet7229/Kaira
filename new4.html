@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swimmer Database Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .filter-btn {
+            @apply px-4 py-2 rounded-md font-semibold text-white shadow-sm transition-colors duration-200;
+        }
+        .control-input {
+            @apply w-24 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-600">Swimmer Database Viewer</h1>
+            <p class="text-lg text-gray-600 mt-2">Event Data from the 'swimmers' Collection</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <!-- Age Bracket & Sub-Group Controls -->
+            <section class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-lg font-bold mb-3">Age Brackets & Groups by Event</h3>
+                <p class="text-sm text-gray-500 mb-3">Define age brackets and max times for sub-groups for each event.</p>
+                <div id="event-controls-container" class="space-y-6 max-h-[32rem] overflow-y-auto pr-2">
+                    <!-- Event-specific controls will be dynamically added here -->
+                </div>
+            </section>
+
+            <!-- Point System Controls -->
+            <section class="bg-white p-4 rounded-lg shadow-md">
+                <h3 class="text-lg font-bold mb-3">Point System</h3>
+                <p class="text-sm text-gray-500 mb-3">Define points awarded for each rank.</p>
+                <div id="point-rules-container" class="space-y-3 mb-4 max-h-96 overflow-y-auto pr-2">
+                </div>
+                <button id="add-point-rule-btn" class="filter-btn bg-gray-600 hover:bg-gray-700 w-full sm:w-auto">+ Add Point Rule</button>
+            </section>
+        </div>
+
+        <!-- Action Buttons -->
+        <section class="bg-white p-4 rounded-lg shadow-md mb-8 text-center">
+             <div class="flex flex-wrap justify-center gap-4">
+                <button id="apply-filters-btn" class="filter-btn bg-blue-600 hover:bg-blue-700">Apply Grouping & Points</button>
+                <button id="update-points-btn" class="filter-btn bg-green-600 hover:bg-green-700">Update Points in Database</button>
+                <button id="reset-filters-btn" class="filter-btn bg-red-600 hover:bg-red-700">Reset View</button>
+             </div>
+             <p id="update-status" class="mt-4 text-sm font-medium text-gray-700 h-5"></p>
+        </section>
+
+
+        <main id="events-container" class="space-y-8">
+            <div id="loading-indicator" class="text-center p-8 bg-white rounded-lg shadow-md">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-500"></div>
+                <p class="mt-4 text-lg font-semibold">Loading and Sorting Swimmer Data...</p>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZt6KtFQmU1U8ae7dwa3F4MMtVEY_2AiY",
+            authDomain: "swimmingcompetition-91229.firebaseapp.com",
+            projectId: "swimmingcompetition-91229",
+            storageBucket: "swimmingcompetition-91229.firebasestorage.app",
+            messagingSenderId: "1040379968158",
+            appId: "1:1040379968158:web:07d232b63116790053598f"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const eventsContainer = document.getElementById('events-container');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const eventControlsContainer = document.getElementById('event-controls-container');
+        const pointRulesContainer = document.getElementById('point-rules-container');
+        const addPointRuleBtn = document.getElementById('add-point-rule-btn');
+        const applyFiltersBtn = document.getElementById('apply-filters-btn');
+        const resetFiltersBtn = document.getElementById('reset-filters-btn');
+        const updatePointsBtn = document.getElementById('update-points-btn');
+        const updateStatus = document.getElementById('update-status');
+
+        let allEventsMap = {};
+        let originalSwimmerDocs = new Map();
+
+        // --- UI Creation Functions ---
+
+        function createEventControlBlocks(eventNames) {
+            eventControlsContainer.innerHTML = '';
+            eventNames.forEach((eventName, index) => {
+                const eventControlBlock = document.createElement('div');
+                eventControlBlock.className = 'p-3 border rounded-lg';
+                eventControlBlock.dataset.eventName = eventName;
+                eventControlBlock.innerHTML = `
+                    <h4 class="text-md font-bold text-gray-800 mb-3">Event ${index + 1}</h4>
+                    <div class="space-y-4 brackets-container"></div>
+                    <button class="add-bracket-btn filter-btn bg-gray-600 hover:bg-gray-700 w-full sm:w-auto mt-3 text-sm py-1">+ Add Bracket</button>
+                `;
+                eventControlsContainer.appendChild(eventControlBlock);
+                eventControlBlock.querySelector('.add-bracket-btn').addEventListener('click', () => {
+                    const container = eventControlBlock.querySelector('.brackets-container');
+                    createAgeBracketInput(container);
+                });
+            });
+        }
+
+        function createDefaultBrackets() {
+            const defaultBracketsConfig = {
+                "default": [
+                    { min: 0, max: 6, groups: [{ name: 'A', maxTime: 60 }, { name: 'B', maxTime: 75 }, { name: 'C', maxTime: 90 }] },
+                    { min: 9, max: 10, groups: [{ name: 'A', maxTime: 35 }, { name: 'B', maxTime: 40 }, { name: 'C', maxTime: 45 }] },
+                    { min: 11, max: 12, groups: [{ name: 'A', maxTime: 32 }, { name: 'B', maxTime: 36 }, { name: 'C', maxTime: 40 }] },
+                ]
+            };
+            
+            eventControlsContainer.querySelectorAll('[data-event-name]').forEach(block => {
+                const container = block.querySelector('.brackets-container');
+                container.innerHTML = ''; // Clear existing
+                const config = defaultBracketsConfig[block.dataset.eventName] || defaultBracketsConfig.default;
+                config.forEach(bracket => createAgeBracketInput(container, bracket.min, bracket.max, bracket.groups));
+            });
+        }
+
+        function createAgeBracketInput(container, min = '', max = '', groups = [{ name: 'A', maxTime: '' }, { name: 'B', maxTime: '' }, { name: 'C', maxTime: '' }]) {
+            const div = document.createElement('div');
+            div.className = 'p-3 border rounded-lg bg-gray-50 space-y-3 bracket-control';
+            div.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <label class="font-semibold text-sm">Age:</label>
+                        <input type="number" placeholder="Min" class="control-input min-age text-sm" min="0" value="${min}">
+                        <span class="text-gray-500">-</span>
+                        <input type="number" placeholder="Max" class="control-input max-age text-sm" min="0" value="${max}">
+                    </div>
+                    <button class="remove-bracket-btn text-red-500 hover:text-red-700 font-bold text-2xl">&times;</button>
+                </div>
+                <div class="pl-4 border-l-2 border-gray-200 space-y-2 group-container">
+                    ${groups.map(g => `
+                        <div class="flex items-center gap-2">
+                            <label class="w-20 font-medium text-sm">Group ${g.name}:</label>
+                            <input type="text" placeholder="MM:SS.ss" class="control-input max-time text-sm" data-group-name="${g.name}" value="${secondsToTimeString(g.maxTime)}">
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            div.querySelector('.remove-bracket-btn').addEventListener('click', () => div.remove());
+            container.appendChild(div);
+        }
+
+        function createDefaultPointRules() {
+            const defaultRules = [
+                { rank: 1, points: 9 }, { rank: 2, points: 7 }, { rank: 3, points: 6 },
+                { rank: 4, points: 5 }, { rank: 5, points: 4 }, { rank: 6, points: 3 },
+                { rank: 7, points: 2 }, { rank: 8, points: 1 }
+            ];
+            pointRulesContainer.innerHTML = '';
+            defaultRules.forEach(rule => createPointRuleInput(rule.rank, rule.points));
+        }
+
+        function createPointRuleInput(rank = '', points = '') {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2';
+            div.innerHTML = `
+                <label class="w-16 font-medium">Rank:</label>
+                <input type="number" placeholder="Rank" class="control-input rank" min="1" value="${rank}">
+                <label class="w-16 font-medium">Points:</label>
+                <input type="number" placeholder="Points" class="control-input points" min="0" value="${points}">
+                <button class="text-red-500 hover:text-red-700 font-bold text-xl">&times;</button>
+            `;
+            div.querySelector('button').addEventListener('click', () => div.remove());
+            pointRulesContainer.appendChild(div);
+        }
+
+        // --- Data Retrieval from UI ---
+
+        function getEventBracketRules() {
+            const eventRules = new Map();
+            eventControlsContainer.querySelectorAll('[data-event-name]').forEach(block => {
+                const eventName = block.dataset.eventName;
+                const brackets = [];
+                block.querySelectorAll('.bracket-control').forEach(div => {
+                    const minAge = parseInt(div.querySelector('.min-age').value, 10);
+                    const maxAge = parseInt(div.querySelector('.max-age').value, 10);
+                    if (!isNaN(minAge) && !isNaN(maxAge) && minAge <= maxAge) {
+                        const groups = [];
+                        div.querySelectorAll('.max-time').forEach(input => {
+                            const maxTime = timeStringToSeconds(input.value);
+                            if (isFinite(maxTime) && maxTime > 0) {
+                                groups.push({ name: input.dataset.groupName, maxTime: maxTime });
+                            }
+                        });
+                        groups.sort((a, b) => a.maxTime - b.maxTime);
+                        brackets.push({ min: minAge, max: maxAge, groups });
+                    }
+                });
+                eventRules.set(eventName, brackets);
+            });
+            return eventRules;
+        }
+
+        function getPointRules() {
+            const rules = new Map();
+            pointRulesContainer.querySelectorAll('div.flex').forEach(div => {
+                const rank = parseInt(div.querySelector('.rank')?.value, 10);
+                const points = parseInt(div.querySelector('.points')?.value, 10);
+                if (!isNaN(rank) && !isNaN(points) && rank > 0) {
+                    rules.set(rank, points);
+                }
+            });
+            return rules;
+        }
+
+        // --- Helper Functions ---
+        function timeStringToSeconds(timeStr) {
+            if (!timeStr || typeof timeStr !== 'string' || timeStr.toLowerCase() === 'n/a') return Infinity;
+            const parts = timeStr.split(':');
+            let seconds = 0;
+            if (parts.length === 2) {
+                seconds = (parseInt(parts[0], 10) * 60) + parseFloat(parts[1]);
+            } else if (parts.length === 1) {
+                seconds = parseFloat(parts[0]);
+            } else {
+                return Infinity;
+            }
+            return isNaN(seconds) ? Infinity : seconds;
+        }
+
+        function secondsToTimeString(totalSeconds) {
+            if (totalSeconds === null || totalSeconds === undefined || !isFinite(totalSeconds)) {
+                return '';
+            }
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const paddedMinutes = String(minutes).padStart(2, '0');
+            // Format seconds to 2 decimal places, then pad the integer part
+            const paddedSeconds = String(seconds.toFixed(2)).padStart(5, '0'); // 5 for SS.ss
+            return `${paddedMinutes}:${paddedSeconds}`;
+        }
+        
+        function processSwimmersWithRanksAndPoints(swimmers, pointRules) {
+            swimmers.sort((a, b) => (a.sortingTime) - (b.sortingTime));
+            const processedSwimmers = [];
+            let i = 0;
+            while (i < swimmers.length) {
+                const currentTime = swimmers[i].sortingTime;
+                let tieGroup = [];
+                let j = i;
+                while (j < swimmers.length && swimmers[j].sortingTime === currentTime) {
+                    tieGroup.push(swimmers[j]);
+                    j++;
+                }
+                const startRank = i + 1;
+                const numTied = tieGroup.length;
+                let totalPoints = 0;
+                for (let k = 0; k < numTied; k++) {
+                    totalPoints += (pointRules.get(startRank + k) || 0);
+                }
+                const averagePoints = numTied > 0 ? totalPoints / numTied : 0;
+                
+                for (const swimmer of tieGroup) {
+                    processedSwimmers.push({ ...swimmer, rank: startRank, points: averagePoints });
+                }
+                i += numTied;
+            }
+            return processedSwimmers;
+        }
+
+        // --- Display Logic ---
+
+        function displayGroupedByBracket() {
+            const eventBracketRules = getEventBracketRules();
+            const pointRules = getPointRules();
+            eventsContainer.innerHTML = '';
+            
+            const sortedEventNames = Object.keys(allEventsMap).sort();
+            
+            sortedEventNames.forEach((eventName, index) => {
+                const eventWrapper = document.createElement('div');
+                eventWrapper.className = 'bg-white p-6 rounded-lg shadow-md';
+                eventWrapper.innerHTML = `<h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Event ${index + 1}</h2>`;
+                
+                let contentWasAddedForEvent = false;
+                const brackets = eventBracketRules.get(eventName) || [];
+
+                brackets.forEach(bracket => {
+                    let swimmersInAgeBracket = allEventsMap[eventName]
+                        .filter(s => s.age >= bracket.min && s.age <= bracket.max)
+                        .map(s => ({ 
+                            ...s, 
+                            groupingTime: timeStringToSeconds(s.actualTime),
+                            sortingTime: s.actualTime ? timeStringToSeconds(s.actualTime) : timeStringToSeconds(s.seedTime)
+                        }));
+                    
+                    if (swimmersInAgeBracket.length === 0) return;
+
+                    const bracketWrapper = document.createElement('div');
+                    bracketWrapper.className = 'mt-6';
+                    bracketWrapper.innerHTML = `<h3 class="text-xl font-bold text-gray-800 mb-3">Age Bracket: ${bracket.min} - ${bracket.max}</h3>`;
+                    
+                    let contentWasAddedForBracket = false;
+
+                    bracket.groups.forEach(group => {
+                        const groupSwimmers = swimmersInAgeBracket.filter(s => s.groupingTime <= group.maxTime);
+                        swimmersInAgeBracket = swimmersInAgeBracket.filter(s => s.groupingTime > group.maxTime);
+                        
+                        if (groupSwimmers.length > 0) {
+                            const rankedSwimmers = processSwimmersWithRanksAndPoints(groupSwimmers, pointRules);
+                            bracketWrapper.appendChild(createTableForGroup(`Group ${group.name}`, rankedSwimmers));
+                            contentWasAddedForBracket = true;
+                        }
+                    });
+
+                    if (swimmersInAgeBracket.length > 0) {
+                        const rankedSwimmers = processSwimmersWithRanksAndPoints(swimmersInAgeBracket, pointRules);
+                        bracketWrapper.appendChild(createTableForGroup('Default Group', rankedSwimmers));
+                        contentWasAddedForBracket = true;
+                    }
+
+                    if (contentWasAddedForBracket) {
+                        eventWrapper.appendChild(bracketWrapper);
+                        contentWasAddedForEvent = true;
+                    }
+                });
+
+                if (contentWasAddedForEvent) {
+                    eventsContainer.appendChild(eventWrapper);
+                }
+            });
+        }
+
+        function createTableForGroup(groupName, rankedSwimmers) {
+            const groupWrapper = document.createElement('div');
+            groupWrapper.className = 'mt-4';
+            groupWrapper.innerHTML = `
+                <h4 class="text-lg font-semibold text-blue-700 mb-2">${groupName}</h4>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Age</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Seed Time</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Actual Time</th>
+                                <th class="text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${rankedSwimmers.map(swimmer => {
+                                const actualTimeDisplay = swimmer.actualTime ? `<span class="font-semibold text-green-600">${swimmer.actualTime}</span>` : 'N/A';
+                                return `<tr>
+                                    <td class="font-medium text-gray-900">${swimmer.rank}</td>
+                                    <td class="font-medium text-gray-900">${swimmer.fullName}</td>
+                                    <td class="text-gray-500">${swimmer.schoolClub}</td>
+                                    <td class="text-gray-500">${swimmer.age}</td>
+                                    <td class="text-gray-500">${swimmer.seedTime}</td>
+                                    <td class="text-gray-500">${actualTimeDisplay}</td>
+                                    <td class="font-bold text-purple-600">${swimmer.points.toFixed(2)}</td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            return groupWrapper;
+        }
+
+
+        // --- Data Fetch and Update ---
+
+        async function fetchAndProcessSwimmers() {
+            try {
+                const querySnapshot = await getDocs(collection(db, "swimmers"));
+                if (querySnapshot.empty) {
+                    loadingIndicator.innerHTML = '<p class="text-gray-500">No swimmers found in the database.</p>';
+                    return;
+                }
+                const tempEventsMap = {};
+                originalSwimmerDocs.clear();
+
+                querySnapshot.forEach((doc) => {
+                    const swimmer = doc.data();
+                    originalSwimmerDocs.set(doc.id, swimmer); 
+
+                    swimmer.events.forEach(event => {
+                        if (!tempEventsMap[event.name]) tempEventsMap[event.name] = [];
+                        tempEventsMap[event.name].push({
+                            docId: doc.id,
+                            eventName: event.name,
+                            fullName: swimmer.fullName, schoolClub: swimmer.schoolClub,
+                            age: swimmer.age, seedTime: event.time, actualTime: event.actualTime
+                        });
+                    });
+                });
+                allEventsMap = tempEventsMap;
+                loadingIndicator.style.display = 'none';
+
+                createEventControlBlocks(Object.keys(allEventsMap).sort());
+                createDefaultBrackets();
+                createDefaultPointRules();
+                
+                displayGroupedByBracket();
+            } catch (error) {
+                console.error("Error fetching swimmers: ", error);
+                loadingIndicator.innerHTML = '<p class="text-red-500">Error loading data. Please check the console for details.</p>';
+            }
+        }
+
+        async function updatePointsInFirebase() {
+            updateStatus.textContent = 'Calculating points...';
+            updatePointsBtn.disabled = true;
+
+            const eventBracketRules = getEventBracketRules();
+            const pointRules = getPointRules();
+            const pointsToUpdate = new Map();
+
+            for (const [eventName, brackets] of eventBracketRules.entries()) {
+                 const swimmersInEvent = allEventsMap[eventName].map(s => ({ 
+                    ...s, 
+                    groupingTime: timeStringToSeconds(s.actualTime),
+                    sortingTime: s.actualTime ? timeStringToSeconds(s.actualTime) : timeStringToSeconds(s.seedTime)
+                }));
+                
+                brackets.forEach(bracket => {
+                    let swimmersInAgeBracket = swimmersInEvent.filter(s => s.age >= bracket.min && s.age <= bracket.max);
+                    
+                    bracket.groups.forEach(group => {
+                        const groupSwimmers = swimmersInAgeBracket.filter(s => s.groupingTime <= group.maxTime);
+                        swimmersInAgeBracket = swimmersInAgeBracket.filter(s => s.groupingTime > group.maxTime);
+                        const rankedSwimmers = processSwimmersWithRanksAndPoints(groupSwimmers, pointRules);
+                        rankedSwimmers.forEach(s => {
+                            if (!pointsToUpdate.has(s.docId)) pointsToUpdate.set(s.docId, new Map());
+                            pointsToUpdate.get(s.docId).set(s.eventName, s.points);
+                        });
+                    });
+
+                    const rankedDefaultSwimmers = processSwimmersWithRanksAndPoints(swimmersInAgeBracket, pointRules);
+                    rankedDefaultSwimmers.forEach(s => {
+                        if (!pointsToUpdate.has(s.docId)) pointsToUpdate.set(s.docId, new Map());
+                        pointsToUpdate.get(s.docId).set(s.eventName, s.points);
+                    });
+                });
+            }
+
+            updateStatus.textContent = 'Updating points in the database...';
+            const updatePromises = [];
+            for (const [docId, eventPointsMap] of pointsToUpdate.entries()) {
+                const originalDoc = originalSwimmerDocs.get(docId);
+                if (originalDoc) {
+                    const newEventsArray = originalDoc.events.map(event => {
+                        if (eventPointsMap.has(event.name)) {
+                            return { ...event, points: eventPointsMap.get(event.name) };
+                        }
+                        const { points, ...rest } = event;
+                        return rest;
+                    });
+                    updatePromises.push(updateDoc(doc(db, "swimmers", docId), { events: newEventsArray }));
+                }
+            }
+
+            try {
+                await Promise.all(updatePromises);
+                updateStatus.textContent = `Successfully updated points for ${updatePromises.length} documents.`;
+            } catch (error) {
+                console.error("Error updating points: ", error);
+                updateStatus.textContent = 'An error occurred. Check the console.';
+            } finally {
+                updatePointsBtn.disabled = false;
+                setTimeout(() => { updateStatus.textContent = ''; }, 5000);
+            }
+        }
+
+        // --- Page Load & Event Listeners ---
+        
+        window.onload = () => {
+            fetchAndProcessSwimmers();
+        };
+
+        addPointRuleBtn.addEventListener('click', () => createPointRuleInput());
+        applyFiltersBtn.addEventListener('click', displayGroupedByBracket);
+        updatePointsBtn.addEventListener('click', updatePointsInFirebase);
+        resetFiltersBtn.addEventListener('click', () => {
+            createDefaultBrackets();
+            createDefaultPointRules();
+            displayGroupedByBracket();
+        });
+
+    </script>
+</body>
+</html>
