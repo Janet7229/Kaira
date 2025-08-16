@@ -48,11 +48,19 @@
         </div>
       </div>
 
-      <div>
-        <label for="age" class="block text-sm font-medium text-gray-700">Age</label>
-        <input type="number" id="age" name="age" min="1" required
-               placeholder="Enter age"
-               class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+      <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="age" class="block text-sm font-medium text-gray-700">Age</label>
+            <input type="number" id="age" name="age" min="1" required
+                   placeholder="Enter age"
+                   class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <div>
+            <label for="age_separator" class="block text-sm font-medium text-gray-700">Age Separator</label>
+            <input type="number" id="age_separator" name="age_separator" min="1" value="10"
+                   placeholder="e.g., 10"
+                   class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+          </div>
       </div>
 
       <div>
@@ -65,7 +73,7 @@
       <div>
         <label for="num_events" class="block text-sm font-medium text-gray-700">Number of Events</label>
         <input type="number" id="num_events" name="num_events" min="0"
-               placeholder="e.g., 3"
+               placeholder="e.g., 12"
                class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
       </div>
 
@@ -151,6 +159,10 @@
     const updateSwimmerBtn = document.getElementById('update_swimmer_btn');
     const cancelEditBtn = document.getElementById('cancel_edit_btn');
     const generateDataBtn = document.getElementById('generate_data_btn');
+    const genderMaleRadio = document.getElementById('gender_male');
+    const genderFemaleRadio = document.getElementById('gender_female');
+    const ageInput = document.getElementById('age');
+    const ageSeparatorInput = document.getElementById('age_separator');
 
     // --- Data Storage ---
     let allSwimmersData = [];
@@ -163,6 +175,10 @@
     cancelEditBtn.addEventListener('click', cancelEditMode);
     bulkSubmitBtn.addEventListener('click', handleBulkSubmit);
     generateDataBtn.addEventListener('click', handleGenerateSampleData);
+    genderMaleRadio.addEventListener('change', generateEventCheckboxes);
+    genderFemaleRadio.addEventListener('change', generateEventCheckboxes);
+    ageInput.addEventListener('input', generateEventCheckboxes);
+    ageSeparatorInput.addEventListener('input', generateEventCheckboxes);
 
     // --- Functions ---
 
@@ -177,21 +193,67 @@
     }
 
     /**
-     * Dynamically creates checkboxes and input fields for swimming events
-     * based on the number entered in the 'num_events' input.
+     * Dynamically creates checkboxes for events based on number, gender, and age.
      */
     function generateEventCheckboxes() {
       eventsContainer.innerHTML = '';
       const numberOfEvents = parseInt(numEventsInput.value, 10);
+      const selectedGender = document.querySelector('input[name="gender"]:checked')?.value;
+      const swimmerAge = parseInt(ageInput.value, 10);
+      const ageSeparator = parseInt(ageSeparatorInput.value, 10);
 
-      if (isNaN(numberOfEvents) || numberOfEvents <= 0) return;
+      // Condition to check if events can be shown
+      if (isNaN(numberOfEvents) || numberOfEvents <= 0) {
+          return;
+      }
+      
+      // NEW: Check if gender and age are filled before showing events
+      if (!selectedGender || isNaN(swimmerAge)) {
+          const message = document.createElement('p');
+          message.textContent = 'Please select a gender and enter an age to see available events.';
+          message.className = 'text-sm text-gray-500 italic';
+          eventsContainer.appendChild(message);
+          return;
+      }
 
       const mainLabel = document.createElement('label');
       mainLabel.textContent = 'Select Events & Enter Seed Times';
       mainLabel.className = 'block text-sm font-medium text-gray-700';
       eventsContainer.appendChild(mainLabel);
 
+      let eventCount = 0;
       for (let i = 1; i <= numberOfEvents; i++) {
+        let shouldShow = true;
+
+        // 1. Gender Filter
+        if (selectedGender === 'Male' && i % 2 !== 0) {
+            shouldShow = false;
+        }
+        if (selectedGender === 'Female' && i % 2 === 0) {
+            shouldShow = false;
+        }
+
+        // 2. Age Filter (only if not already filtered out by gender)
+        if (shouldShow && !isNaN(swimmerAge) && !isNaN(ageSeparator)) {
+            if (swimmerAge <= ageSeparator) {
+                // For younger swimmers, remove events 3, 4, 7, 8, etc.
+                if (i % 4 === 3 || i % 4 === 0) {
+                    shouldShow = false;
+                }
+            } else {
+                // For older swimmers, remove events 1, 2, 5, 6, etc.
+                if (i % 4 === 1 || i % 4 === 2) {
+                    shouldShow = false;
+                }
+            }
+        }
+
+        if (!shouldShow) {
+            continue; // Skip to the next event
+        }
+        
+        eventCount++;
+
         const wrapper = document.createElement('div');
         wrapper.className = 'flex items-center space-x-4';
 
@@ -227,14 +289,31 @@
         wrapper.appendChild(seedTimeInput);
         eventsContainer.appendChild(wrapper);
       }
+      
+      if (eventCount === 0) {
+          const noEventsLabel = document.createElement('p');
+          noEventsLabel.textContent = `No available events for the selected criteria.`;
+          noEventsLabel.className = 'text-sm text-gray-500';
+          eventsContainer.appendChild(noEventsLabel);
+      }
     }
 
     /**
-     * Resets the input form fields to their default state.
+     * Resets the input form fields to their default state, retaining some values.
      */
     function resetPartialForm() {
-      swimmerForm.reset();
+      // Explicitly clear only the fields for the new swimmer
+      document.getElementById('full_name').value = '';
+      document.getElementById('age').value = '';
+      
+      // Uncheck all gender radio buttons
+      genderMaleRadio.checked = false;
+      genderFemaleRadio.checked = false;
+      
+      // Clear the dynamically generated events list
       eventsContainer.innerHTML = '';
+      
+      // Set focus back to the first input field for better user experience
       document.getElementById('full_name').focus();
     }
 
@@ -441,17 +520,15 @@
       bulkSubmitBtn.textContent = 'Submitting...';
 
       try {
-        // UPDATED: Changed the collection path to 'swimmers'
         const swimmersCollection = collection(db, "swimmers");
-        // Use a batch write for more efficient bulk operations
         const batch = writeBatch(db);
         allSwimmersData.forEach(swimmer => {
             const { id, ...firebaseData } = swimmer;
-            const newSwimmerRef = doc(swimmersCollection); // Automatically generate a new doc ID
+            const newSwimmerRef = doc(swimmersCollection);
             batch.set(newSwimmerRef, firebaseData);
         });
 
-        await batch.commit(); // Commit the batch
+        await batch.commit();
         
         showMessage(`✅ Submitted ${allSwimmersData.length} swimmer(s) to Firebase!`, 'success');
         allSwimmersData = [];
